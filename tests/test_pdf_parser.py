@@ -102,6 +102,38 @@ def test_pdf_without_references_returns_warning():
     assert "No References section" in parsed.warnings[0]
 
 
+def test_parse_icml_acl_author_initials_and_corr_arxiv():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 80, "Retriever-Free Retrieval: Navigating Documents", 18),
+                (72, 120, "Published 2026.", 10),
+                (72, 180, "References", 12),
+                (72, 205, "Lewis, P., Perez, E., Piktus, A., and Kiela, D. Retrieval-augmented", 10),
+                (72, 218, "generation for knowledge-intensive NLP tasks. In NeurIPS, 2020.", 10),
+                (72, 240, "Zhang, Y., Li, M., Long, D., and Zhou, J. Qwen3 embedding: Advancing", 10),
+                (72, 253, "text embedding through foundation models. CoRR, abs/2506.05176, 2025.", 10),
+                (72, 275, "Devlin, J., Lee, K., and Toutanova, K. BERT: Pre-training of Deep", 10),
+                (72, 288, "Bidirectional Transformers. In NAACL-HLT, pp. 4171-4186, 2019.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "icml.pdf")
+    assert len(parsed.references) == 3
+
+    r1, r2, r3 = parsed.references
+    assert r1.title == "Retrieval-augmented generation for knowledge-intensive NLP tasks"
+    assert r1.year == 2020
+    assert r1.authors[0] == "Lewis, P."
+
+    assert r2.title == "Qwen3 embedding: Advancing text embedding through foundation models"
+    assert r2.year == 2025
+    assert r2.arxiv_id == "2506.05176"
+
+    assert r3.title == "BERT: Pre-training of Deep Bidirectional Transformers"
+    assert r3.year == 2019
+
+
 def test_invalid_and_empty_pdf_raise():
     with pytest.raises(PDFParseError):
         parse_pdf_bytes(b"not a pdf", "bad.pdf")

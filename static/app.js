@@ -13,6 +13,7 @@
   const lookupBtn = document.getElementById("lookup-btn");
   const demoBtn = document.getElementById("demo-btn");
   const layoutSelect = document.getElementById("layout-select");
+  const labelModeSelect = document.getElementById("label-mode-select");
   const sharedOnlyToggle = document.getElementById("shared-only-toggle");
   const searchInput = document.getElementById("search-input");
   const fitBtn = document.getElementById("fit-btn");
@@ -22,6 +23,7 @@
   const emptyState = document.getElementById("empty-state");
   const loadingOverlay = document.getElementById("loading-overlay");
   const loadingText = document.getElementById("loading-text");
+  const hoverTooltip = document.getElementById("hover-tooltip");
 
   const statSeeds = document.getElementById("stat-seeds");
   const statNodes = document.getElementById("stat-nodes");
@@ -51,21 +53,48 @@
       {
         selector: "node.paper",
         style: {
-          label: "data(shortLabel)",
-          "font-size": 11,
+          label: "data(displayLabel)",
+          "font-size": 10.5,
           "font-family": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
           color: "#1e293b",
           "text-valign": "bottom",
           "text-halign": "center",
           "text-margin-y": 6,
           "text-wrap": "wrap",
-          "text-max-width": 135,
+          "text-max-width": 150,
+          "text-background-color": "#ffffff",
+          "text-background-opacity": 0.9,
+          "text-background-padding": 3,
+          "text-background-shape": "roundrectangle",
+          "text-border-width": 0.75,
+          "text-border-color": "#e2e8f0",
+          "text-border-opacity": 0.9,
           "background-color": "#64748b",
           width: "data(size)",
           height: "data(size)",
-          "border-width": 0,
-          "border-color": "#4f46e5",
+          "border-width": 1.5,
+          "border-color": "#ffffff",
           "overlay-padding": 5,
+          "z-index": 2,
+        },
+      },
+      {
+        selector: "node.paper.hide-label",
+        style: {
+          label: "",
+          "text-background-opacity": 0,
+          "text-border-opacity": 0,
+        },
+      },
+      {
+        selector: "node.paper.timeline-node",
+        style: {
+          "text-valign": "center",
+          "text-halign": "right",
+          "text-margin-x": 8,
+          "text-margin-y": 0,
+          "text-max-width": 195,
+          "text-justification": "left",
         },
       },
       {
@@ -73,6 +102,7 @@
         style: {
           "background-color": "#f59e0b",
           "font-weight": 600,
+          "z-index": 6,
         },
       },
       {
@@ -82,6 +112,8 @@
           "font-weight": 700,
           "font-size": 12,
           color: "#0f172a",
+          "text-border-color": "#c7d2fe",
+          "z-index": 12,
         },
       },
       {
@@ -94,8 +126,12 @@
       {
         selector: "node.paper:selected",
         style: {
+          label: "data(fullLabel)",
+          "text-background-opacity": 0.96,
+          "text-border-opacity": 1,
           "border-width": 4,
           "border-color": "#0f172a",
+          "z-index": 50,
         },
       },
       {
@@ -103,7 +139,7 @@
         style: {
           label: "data(label)",
           shape: "round-rectangle",
-          width: 78,
+          width: 82,
           height: 28,
           "background-color": "#eef2ff",
           "border-width": 1,
@@ -114,30 +150,47 @@
           "text-valign": "center",
           "text-halign": "center",
           events: "no",
+          "z-index": 1,
         },
       },
       {
         selector: "edge",
         style: {
-          width: 1.5,
+          width: 1.25,
           "line-color": "#cbd5e1",
           "target-arrow-color": "#94a3b8",
           "target-arrow-shape": "triangle",
-          "arrow-scale": 0.85,
+          "arrow-scale": 0.75,
           "curve-style": "bezier",
-          opacity: 0.8,
+          opacity: 0.6,
+          "z-index": 1,
         },
       },
       {
         selector: ".dimmed",
         style: {
-          opacity: 0.16,
+          opacity: 0.14,
         },
       },
       {
-        selector: ".highlighted",
+        selector: "node.paper.highlighted",
         style: {
           opacity: 1,
+          label: "data(compactLabel)",
+          "text-background-opacity": 0.95,
+          "text-border-opacity": 1,
+          "z-index": 40,
+        },
+      },
+      {
+        selector: "node.paper.hovered",
+        style: {
+          opacity: 1,
+          label: "data(fullLabel)",
+          "text-background-opacity": 0.98,
+          "text-border-color": "#4f46e5",
+          "text-border-opacity": 1,
+          "z-index": 100,
         },
       },
       {
@@ -145,15 +198,20 @@
         style: {
           "line-color": "#4f46e5",
           "target-arrow-color": "#4f46e5",
-          width: 2.4,
+          width: 2.2,
           opacity: 1,
+          "z-index": 20,
         },
       },
       {
         selector: "node.search-hit",
         style: {
+          label: "data(fullLabel)",
+          "text-background-opacity": 0.95,
+          "text-border-opacity": 1,
           "border-width": 4,
           "border-color": "#ec4899",
+          "z-index": 45,
         },
       },
     ],
@@ -171,10 +229,23 @@
     return 1;
   }
 
-  function shortLabel(node) {
+  function appendYearIfMissing(text, year) {
+    if (!year) return text;
+    if (text.includes(String(year))) return text;
+    return `${text} (${year})`;
+  }
+
+  function formatFullLabel(node) {
     const title = node.title || "Untitled";
-    const truncated = title.length > 42 ? title.slice(0, 40).trimEnd() + "…" : title;
-    return node.year ? `${truncated} (${node.year})` : truncated;
+    const truncated = title.length > 48 ? title.slice(0, 46).trimEnd() + "…" : title;
+    return appendYearIfMissing(truncated, node.year);
+  }
+
+  function formatCompactLabel(node) {
+    if (node.is_seed) return formatFullLabel(node);
+    const title = node.title || "Untitled";
+    const truncated = title.length > 28 ? title.slice(0, 26).trimEnd() + "…" : title;
+    return appendYearIfMissing(truncated, node.year);
   }
 
   function setLoading(isLoading, text = "Processing papers...") {
@@ -286,6 +357,40 @@
     return inDeg;
   }
 
+  function updateLabelVisibility() {
+    const mode = labelModeSelect.value;
+    const isTimeline = layoutSelect.value === "timeline";
+    const paperNodes = cy.nodes(".paper");
+    const total = paperNodes.length;
+    const zoomedIn = cy.zoom() >= 1.1;
+
+    cy.batch(() => {
+      paperNodes.forEach((ele) => {
+        const isSeed = ele.hasClass("seed");
+        const isShared = ele.hasClass("shared");
+        const isImportant = isSeed || isShared;
+
+        ele.toggleClass("timeline-node", isTimeline);
+
+        if (mode === "full") {
+          ele.data("displayLabel", ele.data("fullLabel"));
+          ele.removeClass("hide-label");
+        } else if (mode === "compact") {
+          ele.data("displayLabel", ele.data("compactLabel"));
+          ele.removeClass("hide-label");
+        } else if (mode === "hover") {
+          ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
+          ele.toggleClass("hide-label", !isSeed);
+        } else {
+          // Clean (Auto): always show seeds, shared, timeline nodes, small graphs, or when zoomed in
+          ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
+          const show = isImportant || isTimeline || total <= 20 || zoomedIn;
+          ele.toggleClass("hide-label", !show);
+        }
+      });
+    });
+  }
+
   function renderGraph() {
     const inDeg = computeInDegrees();
     const sharedOnly = sharedOnlyToggle.checked;
@@ -303,19 +408,24 @@
         const size = node.is_seed
           ? 38
           : isShared
-            ? Math.min(44, 24 + deg * 4)
-            : 20;
+            ? Math.min(42, 24 + deg * 4)
+            : 18;
 
         const classes = ["paper"];
         if (node.is_seed) classes.push("seed");
         else if (isShared) classes.push("shared");
         if (node.is_expanded && !node.is_seed) classes.push("expanded");
 
+        const fullLabel = formatFullLabel(node);
+        const compactLabel = formatCompactLabel(node);
+
         cy.add({
           group: "nodes",
           data: {
             id,
-            shortLabel: shortLabel(node),
+            fullLabel,
+            compactLabel,
+            displayLabel: compactLabel,
             size,
             inDegree: deg,
             year: node.year ?? null,
@@ -365,7 +475,6 @@
     const paperNodes = cy.nodes(".paper");
     if (paperNodes.length === 0) return;
 
-    // Group visible paper nodes by year
     const byYear = new Map();
     const unknown = [];
     paperNodes.forEach((ele) => {
@@ -387,13 +496,12 @@
       columns.push({ label: String(yr), nodes: byYear.get(yr) });
     }
 
-    const colSpacing = 220;
-    const rowSpacing = 105;
+    const colSpacing = 275;
+    const rowSpacing = 62;
     const positions = {};
     let maxColHeight = 0;
 
     columns.forEach((col, colIdx) => {
-      // Order within column: seeds first, then higher in-degree, then alphabetical
       col.nodes.sort((a, b) => {
         const na = state.nodes.get(a.id());
         const nb = state.nodes.get(b.id());
@@ -414,7 +522,7 @@
       });
     });
 
-    const headerY = -maxColHeight / 2 - 78;
+    const headerY = -maxColHeight / 2 - 70;
     columns.forEach((col, colIdx) => {
       const headerId = `__year_hdr_${colIdx}`;
       cy.add({
@@ -434,47 +542,111 @@
       animate: true,
       animationDuration: 420,
       fit: true,
-      padding: 48,
+      padding: 56,
+      stop: () => updateLabelVisibility(),
+    }).run();
+  }
+
+  function applyCleanStarRadialLayout(seedEle, leafEles) {
+    // Arrange a 1-seed star graph in clean, non-overlapping concentric rings sorted by year
+    const sortedLeaves = leafEles.toArray().sort((a, b) => {
+      const ya = a.data("year") ?? 0;
+      const yb = b.data("year") ?? 0;
+      if (ya !== yb) return ya - yb;
+      return (a.data("fullLabel") || "").localeCompare(b.data("fullLabel") || "");
+    });
+
+    const positions = {};
+    positions[seedEle.id()] = { x: 0, y: 0 };
+
+    // Distribute across rings so every node has generous arc spacing
+    const minArcSpacing = 96;
+    let remaining = sortedLeaves.slice();
+    let ringIdx = 0;
+
+    while (remaining.length > 0) {
+      const radius = 190 + ringIdx * 135;
+      const capacity = Math.max(10, Math.floor((2 * Math.PI * radius) / minArcSpacing));
+      const ringNodes = remaining.splice(0, capacity);
+      const angleStep = (2 * Math.PI) / ringNodes.length;
+      const angleOffset = (ringIdx % 2) * (angleStep / 2) - Math.PI / 2;
+
+      ringNodes.forEach((ele, i) => {
+        const theta = angleOffset + i * angleStep;
+        positions[ele.id()] = {
+          x: Math.cos(theta) * radius,
+          y: Math.sin(theta) * radius,
+        };
+      });
+      ringIdx++;
+    }
+
+    cy.layout({
+      name: "preset",
+      positions: (node) => positions[node.id()],
+      animate: true,
+      animationDuration: 420,
+      fit: true,
+      padding: 64,
+      stop: () => updateLabelVisibility(),
     }).run();
   }
 
   function applyLayout() {
     const mode = layoutSelect.value;
-    if (cy.nodes(".paper").length === 0) return;
+    const paperNodes = cy.nodes(".paper");
+    if (paperNodes.length === 0) return;
 
     if (mode === "timeline") {
       applyTimelineLayout();
       return;
     }
 
-    // Remove timeline headers for non-timeline layouts
     cy.nodes(".year-header").remove();
+
+    // If this is a pure 1-seed star graph in force-directed mode, use clean radial rings
+    if (mode === "cose") {
+      const seeds = cy.nodes(".paper.seed");
+      const expanded = cy.nodes(".paper.expanded");
+      if (seeds.length === 1 && expanded.length === 0 && paperNodes.length > 8) {
+        applyCleanStarRadialLayout(seeds[0], paperNodes.not(seeds[0]));
+        return;
+      }
+    }
 
     const opts = {
       cose: {
         name: "cose",
         animate: true,
-        animationDuration: 400,
-        padding: 48,
-        nodeRepulsion: () => 8500,
-        idealEdgeLength: () => 110,
+        animationDuration: 450,
+        padding: 64,
+        nodeRepulsion: () => 260000,
+        idealEdgeLength: () => 210,
+        nodeOverlap: 60,
+        gravity: 0.22,
+        numIter: 1200,
+        stop: () => updateLabelVisibility(),
       },
       breadthfirst: {
         name: "breadthfirst",
         directed: true,
-        spacingFactor: 1.35,
+        spacingFactor: 1.65,
+        avoidOverlap: true,
         animate: true,
         animationDuration: 400,
-        padding: 48,
+        padding: 64,
+        stop: () => updateLabelVisibility(),
       },
       concentric: {
         name: "concentric",
         concentric: (node) => (node.hasClass("seed") ? 100 : (node.data("inDegree") || 0) * 10 + 1),
         levelWidth: () => 2,
-        minNodeSpacing: 55,
+        minNodeSpacing: 85,
+        avoidOverlap: true,
         animate: true,
         animationDuration: 400,
-        padding: 48,
+        padding: 64,
+        stop: () => updateLabelVisibility(),
       },
     };
 
@@ -494,6 +666,43 @@
         ele.addClass("search-hit");
       }
     });
+  }
+
+  // Hover tooltip
+  function showTooltip(nodeId, renderedPos) {
+    const node = state.nodes.get(nodeId);
+    if (!node) return;
+    const authors = node.authors?.length
+      ? node.authors.slice(0, 3).join(", ") + (node.authors.length > 3 ? " et al." : "")
+      : "";
+    const metaParts = [authors, node.year, node.venue].filter(Boolean);
+
+    hoverTooltip.innerHTML = "";
+    const titleEl = document.createElement("div");
+    titleEl.className = "tt-title";
+    titleEl.textContent = node.title || "Untitled Paper";
+    hoverTooltip.appendChild(titleEl);
+
+    if (metaParts.length) {
+      const metaEl = document.createElement("div");
+      metaEl.className = "tt-meta";
+      metaEl.textContent = metaParts.join(" · ");
+      hoverTooltip.appendChild(metaEl);
+    }
+
+    const wrap = cy.container().getBoundingClientRect();
+    let left = renderedPos.x + 18;
+    let top = renderedPos.y - 12;
+    if (left + 330 > wrap.width) left = Math.max(12, renderedPos.x - 338);
+    if (top + 90 > wrap.height) top = Math.max(12, renderedPos.y - 84);
+
+    hoverTooltip.style.left = `${left}px`;
+    hoverTooltip.style.top = `${top}px`;
+    hoverTooltip.classList.remove("hidden");
+  }
+
+  function hideTooltip() {
+    hoverTooltip.classList.add("hidden");
   }
 
   // Inspector
@@ -544,7 +753,6 @@
       expandBtn.disabled = !node.expandable;
     }
 
-    // Cited by list
     const citers = [];
     for (const key of state.edges) {
       const [src, dst] = key.split("->");
@@ -559,7 +767,7 @@
         const li = document.createElement("li");
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = shortLabel(citer);
+        btn.textContent = formatFullLabel(citer);
         btn.addEventListener("click", () => {
           const ele = cy.getElementById(citer.id);
           if (ele.nonempty()) {
@@ -725,9 +933,13 @@
   });
 
   layoutSelect.addEventListener("change", () => applyLayout());
+  labelModeSelect.addEventListener("change", () => updateLabelVisibility());
   sharedOnlyToggle.addEventListener("change", () => renderGraph());
   searchInput.addEventListener("input", () => applySearchHighlight());
-  fitBtn.addEventListener("click", () => cy.fit(undefined, 48));
+  fitBtn.addEventListener("click", () => {
+    cy.fit(undefined, 56);
+    updateLabelVisibility();
+  });
 
   exportBtn.addEventListener("click", () => {
     const payload = {
@@ -750,6 +962,7 @@
     state.nodes.clear();
     state.edges.clear();
     state.selectedId = null;
+    hideTooltip();
     showMessages([]);
     renderGraph();
   });
@@ -761,6 +974,13 @@
   expandBtn.addEventListener("click", expandSelectedNode);
 
   // Cytoscape interaction events
+  let zoomTimer = null;
+  cy.on("zoom", () => {
+    if (labelModeSelect.value !== "auto") return;
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(updateLabelVisibility, 80);
+  });
+
   cy.on("tap", "node.paper", (evt) => {
     openInspector(evt.target.id());
   });
@@ -773,8 +993,11 @@
     const neighborhood = node.closedNeighborhood();
     cy.elements(".paper, edge").addClass("dimmed");
     neighborhood.removeClass("dimmed").addClass("highlighted");
+    node.addClass("hovered");
+    showTooltip(node.id(), node.renderedPosition());
   });
   cy.on("mouseout", "node.paper", () => {
-    cy.elements().removeClass("dimmed highlighted");
+    cy.elements().removeClass("dimmed highlighted hovered");
+    hideTooltip();
   });
 })();

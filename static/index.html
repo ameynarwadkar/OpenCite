@@ -65,10 +65,18 @@
       <section class="panel">
         <label class="panel-label" for="layout-select">Graph Layout</label>
         <select id="layout-select" class="select">
-          <option value="cose">Force-directed (cose)</option>
+          <option value="cose">Force-directed / Radial</option>
           <option value="timeline">Timeline (sorted by year →)</option>
           <option value="breadthfirst">Hierarchical</option>
           <option value="concentric">Concentric (by citations)</option>
+        </select>
+
+        <label class="panel-label" for="label-mode-select">Labels</label>
+        <select id="label-mode-select" class="select">
+          <option value="auto">Clean (Auto on zoom/hover)</option>
+          <option value="compact">Compact (All nodes)</option>
+          <option value="full">Full titles (All nodes)</option>
+          <option value="hover">Seeds &amp; hover only</option>
         </select>
 
         <label class="checkbox-row">
@@ -97,6 +105,7 @@
     <!-- Main Graph Canvas -->
     <main class="canvas-wrap">
       <div id="cy" class="cy-canvas"></div>
+      <div id="hover-tooltip" class="hover-tooltip hidden"></div>
 
       <div id="empty-state" class="empty-state">
         <div class="empty-card">

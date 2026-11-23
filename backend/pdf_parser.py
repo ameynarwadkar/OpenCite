@@ -9,8 +9,16 @@ from backend.graph_builder import normalize_arxiv_id, normalize_doi
 
 _DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)", re.IGNORECASE)
 _ARXIV_RE = re.compile(
-    r"(?:arxiv:\s*|arxiv\.org/(?:abs|pdf)/)(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+/\d{7}(?:v\d+)?)",
+    r"(?:arxiv:\s*|arxiv\.org/(?:abs|pdf)/|corr[,\s]+abs/)(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+/\d{7}(?:v\d+)?)",
     re.IGNORECASE,
+)
+_VENUE_START_RE = re.compile(
+    r"^(?:in\s+[A-Z]|corr\b|proceedings\s+of\b|advances\s+in\b|transactions\s+of\b|journal\s+of\b|arxiv\b|http|doi:|pp\.|vol\.|volume\s+)",
+    re.IGNORECASE,
+)
+# Matches ICML/NeurIPS/ACL author lists like "Zhang, Y., Li, M., and Zhou, J."
+_LAST_INITIALS_AUTHOR_BLOCK_RE = re.compile(
+    r"^((?:(?:and\s+|&\s+)?[A-Z][A-Za-z'\-\u00C0-\u024F]+(?:\s+[A-Z][A-Za-z'\-\u00C0-\u024F]+)?,\s*(?:[A-Z]\.(?:\s|-)*)+(?:,\s*(?:and\s+|&\s+)?|\s+and\s+|\s*&\s*|\s+))+)"
 )
 _REF_HEADING_RE = re.compile(
     r"^\s*(?:[0-9IVX]+\.?\s*)?(?:references|bibliography|works\s+cited|literature\s+cited)\s*$",
@@ -177,6 +185,24 @@ def _split_authors(author_str: str) -> list[str]:
     return authors[:8]
 
 
+def _extract_title_from_remainder(remainder: str) -> str:
+    """Extract the paper title sentence from text following the author block."""
+    cleaned = remainder.strip().lstrip(".,;: ")
+    if not cleaned:
+        return ""
+    # Split on sentence boundary (period/question/exclamation followed by space, ignoring single-letter initials)
+    # Also stop before common venue markers like " In EMNLP" or " CoRR,"
+    segments = [
+        s.strip()
+        for s in re.split(r"(?<!\b[A-Z])(?<!\bpp)(?<!\bvol)(?<!\bal)[.?!]\s+", cleaned, flags=re.IGNORECASE)
+        if s.strip()
+    ]
+    for seg in segments:
+        if not _VENUE_START_RE.match(seg) and len(seg) >= 6:
+            return seg.rstrip(".,;:")
+    return segments[0].rstrip(".,;:") if segments else ""
+
+
 def _parse_single_reference(raw_entry: str) -> ParsedReference:
     cleaned = _clean_ref_text(raw_entry)
     doi = _extract_doi(cleaned)
@@ -200,22 +226,45 @@ def _parse_single_reference(raw_entry: str) -> ParsedReference:
             authors = _split_authors(body[: apa_match.start()])
             title = apa_match.group(1).strip().rstrip(".,")
         else:
-            # Strategy 3: Period-separated segments ("Authors. Title. Venue, 2020.")
-            # Avoid splitting after single-letter initials like "A. "
-            segments = [
-                s.strip()
-                for s in re.split(r"(?<!\b[A-Z])\.\s+", body)
-                if s.strip()
-            ]
-            if len(segments) >= 2:
-                authors = _split_authors(segments[0])
-                # Pick first plausible title segment (at least 3 words)
-                for seg in segments[1:]:
-                    if len(seg.split()) >= 3 and not seg.lower().startswith(("http", "doi:", "arxiv:")):
-                        title = seg.rstrip(".,")
-                        break
-            if not title and segments:
-                title = segments[0][:140].rstrip(".,")
+            # Strategy 3: ICML/ACL/NeurIPS "Last, F., Last2, G., and Last3, H. Title. Venue, 2025."
+            author_block = _LAST_INITIALS_AUTHOR_BLOCK_RE.match(body)
+            if author_block and author_block.end() < len(body) - 10:
+                authors_text = author_block.group(1).strip()
+                remainder = body[author_block.end() :].strip()
+                candidate_title = _extract_title_from_remainder(remainder)
+                if candidate_title and not _VENUE_START_RE.match(candidate_title):
+                    # Extract "Last, F." pairs cleanly
+                    authors = [
+                        m.group(0).strip().rstrip(",")
+                        for m in re.finditer(
+                            r"[A-Z][A-Za-z'\-\u00C0-\u024F]+,\s*(?:[A-Z]\.(?:\s|-)*)+",
+                            authors_text,
+                        )
+                    ][:8]
+                    title = candidate_title
+
+            # Strategy 4: "Author et al. Title. Venue"
+            if not title:
+                etal = re.search(r"\bet\s+al\.?\s+", body, re.IGNORECASE)
+                if etal and etal.end() < len(body) - 10:
+                    authors = _split_authors(body[: etal.start()])
+                    title = _extract_title_from_remainder(body[etal.end() :])
+
+            # Strategy 5: Period-separated segments ("Authors. Title. Venue, 2020.")
+            if not title:
+                segments = [
+                    s.strip()
+                    for s in re.split(r"(?<!\b[A-Z])\.\s+", body)
+                    if s.strip()
+                ]
+                if len(segments) >= 2:
+                    authors = _split_authors(segments[0])
+                    for seg in segments[1:]:
+                        if len(seg.split()) >= 3 and not _VENUE_START_RE.match(seg):
+                            title = seg.rstrip(".,")
+                            break
+                if not title and segments:
+                    title = segments[0][:140].rstrip(".,")
 
     if not title:
         title = body[:140].strip() or "Untitled reference"
