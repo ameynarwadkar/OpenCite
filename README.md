@@ -13,15 +13,21 @@ A lightweight local web app that builds an interactive directed citation graph f
 ## Quick Start
 
 ```powershell
-# 1. Create and populate the virtual environment (already done if using this workspace)
+# 1. Install backend dependencies
 uv venv .venv
 uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
 
-# 2. Start the local server
+# 2. Build the TypeScript frontend (already built in frontend/dist)
+cd frontend
+npm install
+npm run build
+cd ..
+
+# 3. Start the local server
 .venv\Scripts\uvicorn.exe backend.main:app --reload
 ```
 
-Then open **http://127.0.0.1:8000** in your browser.
+Then open **http://127.0.0.1:8000** in your browser. For live frontend HMR during development, run `npm run dev` inside `frontend/` (proxies `/api` to `:8000`).
 
 ## Running Tests
 

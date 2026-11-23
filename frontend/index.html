@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Citation Graph</title>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <header class="brand">
+        <span class="brand-title">Citation Graph</span>
+        <button id="theme-toggle" class="icon-btn" type="button" title="Toggle theme" aria-label="Toggle theme"></button>
+      </header>
+
+      <!-- PDF Upload -->
+      <section class="section">
+        <span class="label">PDF</span>
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload PDF files">
+          <input id="pdf-input" type="file" accept=".pdf,application/pdf" multiple hidden />
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Drop PDF or browse</span>
+        </div>
+      </section>
+
+      <!-- DOI / arXiv -->
+      <section class="section">
+        <label class="label" for="id-input">DOI / arXiv</label>
+        <textarea id="id-input" rows="2" placeholder="1706.03762&#10;1810.04805"></textarea>
+        <div class="btn-row">
+          <button id="lookup-btn" class="btn btn-primary" type="button">Add</button>
+          <button id="demo-btn" class="btn btn-outline" type="button">Demo</button>
+        </div>
+      </section>
+
+      <!-- Stats -->
+      <section class="stats-bar" aria-label="Graph stats">
+        <div class="stat"><strong id="stat-seeds">0</strong><span>Seeds</span></div>
+        <div class="stat"><strong id="stat-nodes">0</strong><span>Nodes</span></div>
+        <div class="stat"><strong id="stat-shared">0</strong><span>Shared</span></div>
+        <div class="stat"><strong id="stat-edges">0</strong><span>Edges</span></div>
+      </section>
+
+      <!-- Controls -->
+      <section class="section">
+        <div class="field-grid">
+          <div class="field">
+            <label class="label" for="layout-select">Layout</label>
+            <select id="layout-select" class="control">
+              <option value="cose">Radial / Force</option>
+              <option value="timeline">Timeline →</option>
+              <option value="breadthfirst">Hierarchy</option>
+              <option value="concentric">Concentric</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="label-mode-select">Labels</label>
+            <select id="label-mode-select" class="control">
+              <option value="auto">Auto</option>
+              <option value="compact">Compact</option>
+              <option value="full">Full</option>
+              <option value="hover">Hover</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="toggle-row">
+          <input id="shared-only-toggle" type="checkbox" />
+          <span>Shared only</span>
+        </label>
+
+        <input id="search-input" class="control" type="search" placeholder="Search..." />
+
+        <button id="enrich-years-btn" class="btn btn-outline btn-full hidden" type="button">
+          Resolve years
+        </button>
+
+        <div class="btn-grid">
+          <button id="undo-btn" class="btn btn-outline" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
+          <button id="fit-btn" class="btn btn-outline" type="button">Fit</button>
+          <button id="export-btn" class="btn btn-outline" type="button">Export</button>
+          <button id="clear-btn" class="btn btn-ghost-danger" type="button">Clear</button>
+        </div>
+      </section>
+
+      <!-- Status -->
+      <div id="status-area" class="status-area" aria-live="polite"></div>
+
+      <!-- History -->
+      <section class="section history-section">
+        <div class="row-between">
+          <span class="label">History</span>
+          <button id="clear-history-btn" class="text-btn" type="button">Clear</button>
+        </div>
+        <ul id="history-list" class="history-list">
+          <li class="muted-empty">Empty</li>
+        </ul>
+      </section>
+    </aside>
+
+    <!-- Canvas -->
+    <main class="canvas-wrap">
+      <div id="cy" class="cy-canvas"></div>
+      <div id="hover-tooltip" class="hover-tooltip hidden"></div>
+
+      <div id="empty-state" class="empty-state">
+        <div class="empty-card">
+          <h2>Citation Graph</h2>
+          <p>Drop a PDF or enter a DOI / arXiv ID.</p>
+        </div>
+      </div>
+
+      <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <span id="loading-text">Loading</span>
+      </div>
+
+      <div class="legend" aria-label="Legend">
+        <span class="legend-item"><i class="dot dot-seed"></i>Source</span>
+        <span class="legend-item"><i class="dot dot-shared"></i>Shared</span>
+        <span class="legend-item"><i class="dot dot-cited"></i>Cited</span>
+      </div>
+    </main>
+
+    <!-- Inspector -->
+    <aside id="inspector" class="inspector hidden" aria-label="Paper details">
+      <header class="inspector-header">
+        <h2 id="insp-title">Title</h2>
+        <button id="insp-close" class="icon-btn" type="button" aria-label="Close">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </header>
+
+      <div id="insp-badges" class="badge-row"></div>
+
+      <dl class="meta-grid">
+        <div><dt>Year</dt><dd id="insp-year">—</dd></div>
+        <div><dt>Citations</dt><dd id="insp-global-cites">—</dd></div>
+        <div class="full"><dt>Venue</dt><dd id="insp-venue">—</dd></div>
+        <div class="full"><dt>Authors</dt><dd id="insp-authors">—</dd></div>
+      </dl>
+
+      <div id="insp-links" class="link-row"></div>
+
+      <div class="inspector-actions">
+        <button id="expand-btn" class="btn btn-primary btn-full" type="button">← Older</button>
+        <button id="expand-cited-by-btn" class="btn btn-outline btn-full" type="button">→ Newer</button>
+      </div>
+
+      <div id="insp-cited-by-section" class="insp-block hidden">
+        <span class="label">Cited by</span>
+        <ul id="insp-cited-by" class="paper-list"></ul>
+      </div>
+
+      <div id="insp-raw-section" class="insp-block hidden">
+        <span class="label">Reference</span>
+        <p id="insp-raw" class="raw-box"></p>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

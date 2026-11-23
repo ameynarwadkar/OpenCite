@@ -25,9 +25,11 @@ from backend.resolver import (
     openalex_work_to_node,
 )
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
+STATIC_DIR = ROOT_DIR / "static"
 
-app = FastAPI(title="Minimal Citation Graph", version="0.1.0")
+app = FastAPI(title="Minimal Citation Graph", version="0.2.0")
 _default_resolver = PaperResolver()
 
 
@@ -35,12 +37,21 @@ def get_resolver() -> PaperResolver:
     return _default_resolver
 
 
+if (FRONTEND_DIST_DIR / "assets").exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=str(FRONTEND_DIST_DIR / "assets")),
+        name="assets",
+    )
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/", include_in_schema=False)
 async def serve_index() -> FileResponse:
+    dist_index = FRONTEND_DIST_DIR / "index.html"
+    if dist_index.exists():
+        return FileResponse(dist_index)
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="Frontend index.html not found.")
