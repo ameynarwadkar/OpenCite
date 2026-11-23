@@ -153,6 +153,29 @@ def test_year_extraction_edge_cases():
     assert parsed.references[2].year == 2025
 
 
+def test_multiline_author_list_is_not_split_into_orphan_node():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 80, "Multi Author Reference Test", 18),
+                (72, 130, "References", 12),
+                (72, 155, "Lewis, P., Perez, E., Piktus, A., Petroni, F.,", 10),
+                (72, 168, "Karpukhin, V., Goyal, N., and Kiela, D. Retrieval-", 10),
+                (72, 181, "augmented generation for NLP tasks. In NeurIPS, 2020.", 10),
+                (72, 200, "Devlin, J., Lee, K., Chang, M., and Toutanova, K.", 10),
+                (72, 213, "BERT: Pre-training of Deep Bidirectional Transformers.", 10),
+                (72, 226, "In NAACL-HLT, 2019.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "multiauthor.pdf")
+    assert len(parsed.references) == 2
+    assert parsed.references[0].year == 2020
+    assert "Retrievalaugmented generation" in parsed.references[0].title or "Retrieval-augmented generation" in parsed.references[0].title
+    assert parsed.references[1].year == 2019
+    assert "BERT: Pre-training of Deep Bidirectional Transformers" in parsed.references[1].title
+
+
 def test_invalid_and_empty_pdf_raise():
     with pytest.raises(PDFParseError):
         parse_pdf_bytes(b"not a pdf", "bad.pdf")

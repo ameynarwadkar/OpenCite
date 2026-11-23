@@ -323,6 +323,47 @@ def _locate_references_lines(pages_text: list[str]) -> list[str]:
     return ref_lines
 
 
+def _looks_like_complete_reference(lines: list[str]) -> bool:
+    if not lines:
+        return False
+    last = lines[-1].strip()
+    if not last:
+        return False
+    # Never split right after a comma, semicolon, hyphen, or "and" / "&"
+    if re.search(r"(?:[,;\-&]|\band)$", last, re.IGNORECASE):
+        return False
+    joined = " ".join(lines)
+    if (
+        _extract_year(joined) is not None
+        or _extract_arxiv_id(joined) is not None
+        or _extract_doi(joined) is not None
+    ):
+        return True
+    # Allow split if the entry clearly ends with a sentence period (not a single-letter initial)
+    if last.endswith(".") and not re.search(r"\b[A-Z]\.$", last):
+        return True
+    return False
+
+
+def _merge_orphan_fragments(entries: list[str]) -> list[str]:
+    """Merge accidental author-only fragments (e.g. split across a page break) into the next entry."""
+    if len(entries) < 2:
+        return entries
+    merged: list[str] = []
+    i = 0
+    while i < len(entries):
+        chunk = entries[i].strip()
+        if (
+            i + 1 < len(entries)
+            and not _looks_like_complete_reference(chunk.splitlines())
+        ):
+            entries[i + 1] = chunk + "\n" + entries[i + 1]
+        else:
+            merged.append(chunk)
+        i += 1
+    return merged
+
+
 def _split_reference_entries(ref_lines: list[str]) -> list[str]:
     if not ref_lines:
         return []
@@ -372,22 +413,24 @@ def _split_reference_entries(ref_lines: list[str]) -> list[str]:
     joined = "\n".join(ref_lines)
     blank_chunks = [c.strip() for c in re.split(r"\n\s*\n", joined) if c.strip()]
     if len(blank_chunks) >= 2:
-        return blank_chunks
+        return _merge_orphan_fragments(blank_chunks)
 
     author_hits = sum(1 for line in non_empty if _AUTHOR_START_RE.match(line.strip()))
     if author_hits >= 2:
         entries = []
         current = []
         for line in non_empty:
-            if _AUTHOR_START_RE.match(line.strip()):
+            if _AUTHOR_START_RE.match(line.strip()) and (
+                not current or _looks_like_complete_reference(current)
+            ):
                 if current:
                     entries.append("\n".join(current))
                 current = [line]
-            elif current:
+            else:
                 current.append(line)
         if current:
             entries.append("\n".join(current))
-        return entries
+        return _merge_orphan_fragments(entries)
 
     # Last resort: each non-empty line with >= 25 chars
     return [line.strip() for line in non_empty if len(line.strip()) >= 25]
