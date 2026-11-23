@@ -60,6 +60,7 @@ const inspGlobalCites = byId<HTMLElement>("insp-global-cites");
 const inspLinks = byId<HTMLDivElement>("insp-links");
 const expandBtn = byId<HTMLButtonElement>("expand-btn");
 const expandCitedByBtn = byId<HTMLButtonElement>("expand-cited-by-btn");
+const newGraphBtn = byId<HTMLButtonElement>("new-graph-btn");
 const inspCitedBySection = byId<HTMLDivElement>("insp-cited-by-section");
 const inspCitedBy = byId<HTMLUListElement>("insp-cited-by");
 const inspRawSection = byId<HTMLDivElement>("insp-raw-section");
@@ -226,6 +227,8 @@ function openInspector(nodeId: string): void {
 
   expandCitedByBtn.textContent = node.is_cited_by_expanded ? "Newer ✓" : "→ Newer";
   expandCitedByBtn.disabled = node.is_cited_by_expanded || !node.expandable;
+
+  newGraphBtn.disabled = !node.expandable;
 
   const citers: PaperNode[] = [];
   for (const key of store.edges) {
@@ -444,6 +447,39 @@ async function handleExpandNewer(): Promise<void> {
   }
 }
 
+async function handleNewGraphFromNode(): Promise<void> {
+  if (!store.selectedId) return;
+  const node = store.nodes.get(store.selectedId);
+  if (!node) return;
+
+  // Preserve current graph in history before starting fresh
+  store.saveHistory(layoutSelect.value as LayoutMode);
+  setLoading(true, `Building graph for "${formatCompactLabel(node)}"...`);
+  showMessages([]);
+  try {
+    const data = await apiExpandReferences(node);
+    store.clear();
+
+    const seedNodes = data.nodes.map((n) =>
+      n.id === data.source_id ? { ...n, is_seed: true, is_expanded: true } : n
+    );
+    if (seedNodes.length === 0) {
+      seedNodes.push({ ...node, is_seed: true, is_expanded: false, is_cited_by_expanded: false });
+    }
+
+    store.mergePayload({ nodes: seedNodes, edges: data.edges, source_id: data.source_id });
+    store.selectedId = store.primarySeedId;
+    renderAll();
+    store.saveHistory(layoutSelect.value as LayoutMode);
+    renderHistory();
+    if (data.warnings.length) showMessages(data.warnings);
+  } catch (err) {
+    showMessages([err instanceof Error ? err.message : "Failed to create new graph."], true);
+  } finally {
+    setLoading(false);
+  }
+}
+
 async function handleEnrichYears(): Promise<void> {
   const undated = Array.from(store.nodes.values()).filter((n) => !n.year);
   if (undated.length === 0) return;
@@ -562,6 +598,7 @@ inspClose.addEventListener("click", () => {
 });
 expandBtn.addEventListener("click", () => void handleExpandOlder());
 expandCitedByBtn.addEventListener("click", () => void handleExpandNewer());
+newGraphBtn.addEventListener("click", () => void handleNewGraphFromNode());
 
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
