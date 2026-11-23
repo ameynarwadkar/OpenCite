@@ -11,9 +11,9 @@ export interface GraphViewCallbacks {
 
 export class CitationGraphView {
   readonly cy: Core;
-  private zoomTimer: number | null = null;
   private labelMode: LabelMode = "auto";
   private layoutMode: LayoutMode = "cose";
+  private wasZoomedIn = false;
 
   constructor(
     container: HTMLElement,
@@ -23,7 +23,9 @@ export class CitationGraphView {
     this.cy = cytoscape({
       container,
       elements: [],
-      wheelSensitivity: 0.25,
+      wheelSensitivity: 1.2,
+      minZoom: 0.12,
+      maxZoom: 4,
       style: [
         {
           selector: "node.paper",
@@ -217,8 +219,11 @@ export class CitationGraphView {
 
     this.cy.on("zoom", () => {
       if (this.labelMode !== "auto") return;
-      if (this.zoomTimer !== null) window.clearTimeout(this.zoomTimer);
-      this.zoomTimer = window.setTimeout(() => this.updateLabelVisibility(), 80);
+      const zoomedIn = this.cy.zoom() >= 1.1;
+      if (zoomedIn !== this.wasZoomedIn) {
+        this.wasZoomedIn = zoomedIn;
+        this.updateLabelVisibility();
+      }
     });
 
     this.cy.on("tap", "node.paper", (evt) => {
