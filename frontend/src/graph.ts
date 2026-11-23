@@ -141,7 +141,7 @@ export class CitationGraphView {
             "border-width": 1,
             "border-color": "#d4d4d8",
             color: "#09090b",
-            "font-family": "ui-monospace, SFMono-Regular, Menlo, monospace",
+            "font-family": '"Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             "font-size": 11.5,
             "font-weight": 600,
             "text-valign": "center",
