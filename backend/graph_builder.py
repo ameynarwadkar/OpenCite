@@ -232,8 +232,14 @@ class GraphBuilder:
                 existing.openalex_id or normalized.openalex_id,
             ),
             raw_citation=existing.raw_citation or normalized.raw_citation,
+            cited_by_count=(
+                existing.cited_by_count
+                if existing.cited_by_count is not None
+                else normalized.cited_by_count
+            ),
             is_seed=existing.is_seed or normalized.is_seed,
             is_expanded=existing.is_expanded or normalized.is_expanded,
+            is_cited_by_expanded=existing.is_cited_by_expanded or normalized.is_cited_by_expanded,
             expandable=existing.expandable or normalized.expandable,
         )
 

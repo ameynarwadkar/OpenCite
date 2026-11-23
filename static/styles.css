@@ -552,6 +552,12 @@ textarea:focus,
   text-decoration: underline;
 }
 
+.inspector-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .inspector-section h3 {
   margin: 0 0 6px;
   font-size: 12px;

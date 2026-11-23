@@ -22,7 +22,7 @@ CROSSREF_API = "https://api.crossref.org/works"
 ARXIV_API = "https://export.arxiv.org/api/query"
 USER_AGENT = "citation-graph/0.1 (mailto:citation-graph@local.dev)"
 WORK_SELECT_FIELDS = (
-    "id,doi,ids,title,publication_year,authorships,primary_location,referenced_works"
+    "id,doi,ids,title,publication_year,cited_by_count,authorships,primary_location,referenced_works"
 )
 MAX_REFERENCES_PER_PAPER = 200
 BATCH_SIZE = 50
@@ -103,6 +103,10 @@ def openalex_work_to_node(
     )
     url = build_default_url(doi, arxiv_id, oa_id)
 
+    cited_by_count = work.get("cited_by_count")
+    if not isinstance(cited_by_count, int):
+        cited_by_count = None
+
     return PaperNode(
         id=canonical_id,
         title=title,
@@ -113,6 +117,7 @@ def openalex_work_to_node(
         arxiv_id=arxiv_id,
         openalex_id=oa_id,
         url=url,
+        cited_by_count=cited_by_count,
         is_seed=is_seed,
         is_expanded=is_expanded,
         expandable=True,
@@ -342,6 +347,36 @@ class PaperResolver:
                     await client.aclose()
 
         return [results[nid] for nid in norm_ids if nid in results]
+
+    async def fetch_citing_works(
+        self, openalex_id: str, limit: int = 30
+    ) -> list[dict]:
+        """Fetch top papers that cite the given OpenAlex work (forward citations)."""
+        nid = normalize_openalex_id(openalex_id)
+        if not nid:
+            return []
+        per_page = max(1, min(limit, BATCH_SIZE))
+        client, should_close = self._get_client()
+        try:
+            data = await self._get_json(
+                client,
+                f"{OPENALEX_API}/works",
+                params={
+                    "filter": f"cites:{nid}",
+                    "sort": "cited_by_count:desc",
+                    "per-page": per_page,
+                    "select": WORK_SELECT_FIELDS,
+                },
+            )
+            results = (data or {}).get("results") or []
+            if not isinstance(results, list):
+                return []
+            for work in results:
+                self._cache_work(work)
+            return results
+        finally:
+            if should_close:
+                await client.aclose()
 
     async def fetch_works_by_dois(self, dois: list[str]) -> dict[str, dict]:
         """Batch-enrich a list of DOIs via OpenAlex (up to 50 per request)."""

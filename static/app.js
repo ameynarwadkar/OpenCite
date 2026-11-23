@@ -46,8 +46,10 @@
   const inspYear = document.getElementById("insp-year");
   const inspVenue = document.getElementById("insp-venue");
   const inspAuthors = document.getElementById("insp-authors");
+  const inspGlobalCites = document.getElementById("insp-global-cites");
   const inspLinks = document.getElementById("insp-links");
   const expandBtn = document.getElementById("expand-btn");
+  const expandCitedByBtn = document.getElementById("expand-cited-by-btn");
   const inspCitedBySection = document.getElementById("insp-cited-by-section");
   const inspCitedBy = document.getElementById("insp-cited-by");
   const inspRawSection = document.getElementById("insp-raw-section");
@@ -332,8 +334,10 @@
           openalex_id: existing.openalex_id || incoming.openalex_id,
           url: existing.url || incoming.url,
           raw_citation: existing.raw_citation || incoming.raw_citation,
+          cited_by_count: existing.cited_by_count ?? incoming.cited_by_count ?? null,
           is_seed: Boolean(existing.is_seed || incoming.is_seed),
           is_expanded: Boolean(existing.is_expanded || incoming.is_expanded),
+          is_cited_by_expanded: Boolean(existing.is_cited_by_expanded || incoming.is_cited_by_expanded),
           expandable: Boolean(existing.expandable || incoming.expandable),
         };
         if (targetId !== existingId) {
@@ -734,6 +738,8 @@
     inspYear.textContent = node.year ? String(node.year) : "Unknown";
     inspVenue.textContent = node.venue || "—";
     inspAuthors.textContent = node.authors?.length ? node.authors.join(", ") : "—";
+    inspGlobalCites.textContent =
+      typeof node.cited_by_count === "number" ? node.cited_by_count.toLocaleString() : "—";
 
     inspBadges.innerHTML = "";
     if (node.is_seed) {
@@ -764,11 +770,19 @@
     }
 
     if (node.is_expanded) {
-      expandBtn.textContent = "Citations Expanded";
+      expandBtn.textContent = "References Expanded";
       expandBtn.disabled = true;
     } else {
-      expandBtn.textContent = "Expand Citations";
+      expandBtn.textContent = "Expand References (← older)";
       expandBtn.disabled = !node.expandable;
+    }
+
+    if (node.is_cited_by_expanded) {
+      expandCitedByBtn.textContent = "Cited By Expanded";
+      expandCitedByBtn.disabled = true;
+    } else {
+      expandCitedByBtn.textContent = "Expand Cited By (→ newer)";
+      expandCitedByBtn.disabled = !node.expandable;
     }
 
     const citers = [];
@@ -1113,7 +1127,52 @@
     } catch (err) {
       showMessages([`Network error: ${err.message}`], true);
       expandBtn.disabled = false;
-      expandBtn.textContent = "Expand Citations";
+      expandBtn.textContent = "Expand References (← older)";
+    }
+  }
+
+  async function expandCitedBySelectedNode() {
+    if (!state.selectedId) return;
+    const node = state.nodes.get(state.selectedId);
+    if (!node || node.is_cited_by_expanded) return;
+
+    expandCitedByBtn.disabled = true;
+    expandCitedByBtn.textContent = "Fetching forward citations...";
+    showMessages([]);
+    try {
+      const resp = await fetch("/api/papers/cited-by", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          node: {
+            id: node.id,
+            title: node.title,
+            year: node.year,
+            doi: node.doi,
+            arxiv_id: node.arxiv_id,
+            openalex_id: node.openalex_id,
+          },
+          limit: 30,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showMessages([data.detail || "Forward citation lookup failed."], true);
+        expandCitedByBtn.disabled = false;
+        expandCitedByBtn.textContent = "Expand Cited By (→ newer)";
+        return;
+      }
+      if (data.nodes?.length) {
+        mergeGraphPayload(data, node.id);
+        saveCurrentToHistory();
+      } else {
+        openInspector(node.id);
+      }
+      if (data.warnings?.length) showMessages(data.warnings);
+    } catch (err) {
+      showMessages([`Network error: ${err.message}`], true);
+      expandCitedByBtn.disabled = false;
+      expandCitedByBtn.textContent = "Expand Cited By (→ newer)";
     }
   }
 
@@ -1250,6 +1309,7 @@
     closeInspector();
   });
   expandBtn.addEventListener("click", expandSelectedNode);
+  expandCitedByBtn.addEventListener("click", expandCitedBySelectedNode);
 
   // Cytoscape interaction events
   let zoomTimer = null;

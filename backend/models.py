@@ -14,8 +14,10 @@ class PaperNode(BaseModel):
     openalex_id: str | None = None
     url: str | None = None
     raw_citation: str | None = None
+    cited_by_count: int | None = None
     is_seed: bool = False
     is_expanded: bool = False
+    is_cited_by_expanded: bool = False
     expandable: bool = True
 
 
@@ -49,6 +51,7 @@ class ExpandNodeInput(BaseModel):
 
 class ExpandRequest(BaseModel):
     node: ExpandNodeInput
+    limit: int = 30
 
 
 class EnrichNodeInput(BaseModel):

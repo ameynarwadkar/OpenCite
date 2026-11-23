@@ -10,7 +10,10 @@ def _make_mock_resolver() -> PaperResolver:
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         filter_param = request.url.params.get("filter", "")
-        if "/works/https://doi.org/10.48550/arxiv.1706.03762" in url:
+        if (
+            "/works/https://doi.org/10.48550/arxiv.1706.03762" in url
+            or "/works/W2963403868" in url
+        ):
             return httpx.Response(
                 200,
                 json={
@@ -30,6 +33,21 @@ def _make_mock_resolver() -> PaperResolver:
                     "title": "Neural Machine Translation",
                     "publication_year": 2015,
                     "referenced_works": ["https://openalex.org/W200"],
+                },
+            )
+        if filter_param.startswith("cites:W2963403868"):
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": "https://openalex.org/W500",
+                            "doi": "https://doi.org/10.48550/arXiv.1810.04805",
+                            "title": "BERT: Pre-training of Deep Bidirectional Transformers",
+                            "publication_year": 2019,
+                            "cited_by_count": 90000,
+                        }
+                    ]
                 },
             )
         if filter_param.startswith("openalex:"):
@@ -188,6 +206,35 @@ def test_enrich_endpoint_uses_crossref_fallback():
         assert upd["old_id"] == "local:abc123"
         assert upd["node"]["year"] == 2021
         assert upd["node"]["doi"] == "10.1000/crossref-hit"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cited_by_endpoint_returns_forward_citations():
+    resolver = _make_mock_resolver()
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            "/api/papers/cited-by",
+            json={
+                "node": {
+                    "id": "doi:10.48550/arxiv.1706.03762",
+                    "openalex_id": "W2963403868",
+                    "title": "Attention Is All You Need",
+                },
+                "limit": 10,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source_id"] == "doi:10.48550/arxiv.1706.03762"
+        assert len(data["edges"]) == 1
+        # Forward citation edge points FROM citing paper TO target paper
+        assert data["edges"][0]["source"] == "doi:10.48550/arxiv.1810.04805"
+        assert data["edges"][0]["target"] == "doi:10.48550/arxiv.1706.03762"
+        target_node = next(n for n in data["nodes"] if n["id"] == data["source_id"])
+        assert target_node["is_cited_by_expanded"] is True
     finally:
         app.dependency_overrides.clear()
 

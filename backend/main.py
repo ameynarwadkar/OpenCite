@@ -234,6 +234,73 @@ async def expand_paper(
     )
 
 
+@app.post("/api/papers/cited-by", response_model=ExpandResponse)
+async def expand_cited_by(
+    payload: ExpandRequest,
+    resolver: PaperResolver = Depends(get_resolver),
+) -> ExpandResponse:
+    """Fetch top forward-citing papers (newer papers that cite the selected paper)."""
+    node = payload.node
+    work: dict | None = None
+    warnings: list[str] = []
+
+    for candidate in (node.openalex_id, node.doi, node.arxiv_id):
+        if candidate:
+            work, _, _ = await resolver.fetch_work_by_identifier(candidate)
+            if work is not None:
+                break
+
+    if work is None and node.title:
+        work = await resolver.resolve_by_title(node.title, year=node.year)
+
+    if work is None:
+        return ExpandResponse(
+            source_id=node.id,
+            nodes=[],
+            edges=[],
+            warnings=[
+                f"Could not match '{node.title or node.id}' in OpenAlex to fetch forward citations."
+            ],
+        )
+
+    gb = GraphBuilder()
+    target_node = openalex_work_to_node(
+        work, is_seed=False, is_expanded=False
+    ).model_copy(update={"is_cited_by_expanded": True})
+    target_id = gb.add_node(target_node)
+
+    limit = max(1, min(payload.limit, 50))
+    citing_works = (
+        await resolver.fetch_citing_works(target_node.openalex_id, limit=limit)
+        if target_node.openalex_id
+        else []
+    )
+    if not citing_works:
+        warnings.append(
+            f"No forward citations indexed in OpenAlex for '{target_node.title}'."
+        )
+    elif (
+        target_node.cited_by_count is not None
+        and target_node.cited_by_count > len(citing_works)
+    ):
+        warnings.append(
+            f"Showing top {len(citing_works)} most-cited papers out of {target_node.cited_by_count:,} citing '{target_node.title}'."
+        )
+
+    for citing_work in citing_works:
+        citing_node = openalex_work_to_node(citing_work, is_seed=False, is_expanded=False)
+        citing_id = gb.add_node(citing_node)
+        gb.add_edge(citing_id, target_id)
+
+    built = gb.build(warnings=warnings)
+    return ExpandResponse(
+        source_id=target_id,
+        nodes=built.nodes,
+        edges=built.edges,
+        warnings=built.warnings,
+    )
+
+
 @app.post("/api/papers/enrich", response_model=EnrichResponse)
 async def enrich_papers(
     payload: EnrichRequest,
