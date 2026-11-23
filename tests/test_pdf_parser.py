@@ -1,0 +1,114 @@
+import pymupdf
+import pytest
+
+from backend.pdf_parser import PDFParseError, parse_pdf_bytes
+
+
+def _make_pdf(pages: list[list[tuple[float, float, str, float]]]) -> bytes:
+    """Helper to generate a synthetic PDF with (x, y, text, fontsize) items per page."""
+    doc = pymupdf.open()
+    for items in pages:
+        page = doc.new_page(width=595, height=842)
+        for x, y, text, size in items:
+            page.insert_text((x, y), text, fontsize=size)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_parse_bracketed_references_and_seed_metadata():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 80, "A Minimal Study of Citation Graphs", 18),
+                (72, 110, "Alice Smith, Bob Jones", 11),
+                (72, 130, "arXiv:2401.12345v2  doi:10.1145/1234567.8901234", 10),
+                (72, 180, "1. Introduction", 12),
+                (72, 200, "Citation graphs help researchers navigate literature.", 10),
+                (72, 260, "References", 13),
+                (72, 285, "[1] A. Vaswani, N. Shazeer. \"Attention Is All You Need.\" NeurIPS, 2017. arXiv:1706.03762", 10),
+                (72, 305, "[2] J. Devlin, M. Chang. BERT: Pre-training of Deep Bidirectional Transformers. NAACL, 2019. 10.18653/v1/N19-1423", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "study.pdf")
+    assert parsed.title == "A Minimal Study of Citation Graphs"
+    assert parsed.arxiv_id == "2401.12345"
+    assert parsed.doi == "10.1145/1234567.8901234"
+    assert parsed.warnings == []
+    assert len(parsed.references) == 2
+
+    r1, r2 = parsed.references
+    assert r1.title == "Attention Is All You Need"
+    assert r1.year == 2017
+    assert r1.arxiv_id == "1706.03762"
+    assert r2.year == 2019
+    assert r2.doi == "10.18653/v1/n19-1423"
+
+
+def test_parse_dot_numbered_references():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 80, "Graph Neural Networks Survey", 18),
+                (72, 130, "Published in 2022.", 10),
+                (72, 200, "References", 12),
+                (72, 225, "1. Kipf, T. (2017). Semi-Supervised Classification with Graph Convolutional Networks. ICLR.", 10),
+                (72, 245, "2. Velickovic, P. (2018). Graph Attention Networks. ICLR.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "gnn.pdf")
+    assert len(parsed.references) == 2
+    assert parsed.references[0].year == 2017
+    assert "Semi-Supervised Classification" in parsed.references[0].title
+    assert parsed.references[1].year == 2018
+    assert "Graph Attention Networks" in parsed.references[1].title
+
+
+def test_parse_two_column_references():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 60, "Two Column Paper Title", 18),
+                (72, 110, "Left column intro paragraph text here.", 10),
+                (72, 140, "More left column body text for layout detection.", 10),
+                (320, 110, "Right column body text here.", 10),
+                (320, 140, "References", 12),
+                (320, 165, "[1] LeCun, Y. \"Deep Learning.\" Nature, 2015.", 10),
+                (320, 185, "[2] Goodfellow, I. \"Generative Adversarial Nets.\" NeurIPS, 2014.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "twocol.pdf")
+    assert len(parsed.references) == 2
+    assert parsed.references[0].title == "Deep Learning"
+    assert parsed.references[1].title == "Generative Adversarial Nets"
+
+
+def test_pdf_without_references_returns_warning():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 80, "Short Note Without Bibliography", 18),
+                (72, 120, "This short note has no references section at all.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "note.pdf")
+    assert parsed.title == "Short Note Without Bibliography"
+    assert parsed.references == []
+    assert len(parsed.warnings) == 1
+    assert "No References section" in parsed.warnings[0]
+
+
+def test_invalid_and_empty_pdf_raise():
+    with pytest.raises(PDFParseError):
+        parse_pdf_bytes(b"not a pdf", "bad.pdf")
+
+    empty_doc = pymupdf.open()
+    empty_doc.new_page()
+    empty_bytes = empty_doc.tobytes()
+    empty_doc.close()
+    with pytest.raises(PDFParseError, match="No extractable text"):
+        parse_pdf_bytes(empty_bytes, "scanned.pdf")
