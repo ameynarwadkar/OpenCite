@@ -16,9 +16,9 @@ export interface GraphViewCallbacks {
 
 export class CitationGraphView {
   readonly cy: Core;
+  private zoomTimer: number | null = null;
   private labelMode: LabelMode = "auto";
   private layoutMode: LayoutMode = "cose";
-  private wasZoomedIn = false;
   private dragLastPos: { x: number; y: number } | null = null;
   private dragNeighbors: cytoscape.NodeCollection | null = null;
 
@@ -38,14 +38,14 @@ export class CitationGraphView {
           selector: "node.paper",
           style: {
             label: "data(displayLabel)",
-            "font-size": 10.5,
+            "font-size": 10,
             "font-family": '"Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             color: "#09090b",
             "text-valign": "bottom",
             "text-halign": "center",
             "text-margin-y": 6,
             "text-wrap": "wrap",
-            "text-max-width": "150px",
+            "text-max-width": "130px",
             "text-background-color": "#ffffff",
             "text-background-opacity": 0.92,
             "text-background-padding": "3px",
@@ -265,11 +265,8 @@ export class CitationGraphView {
 
     this.cy.on("zoom", () => {
       if (this.labelMode !== "auto") return;
-      const zoomedIn = this.cy.zoom() >= 1.1;
-      if (zoomedIn !== this.wasZoomedIn) {
-        this.wasZoomedIn = zoomedIn;
-        this.updateLabelVisibility();
-      }
+      if (this.zoomTimer !== null) window.clearTimeout(this.zoomTimer);
+      this.zoomTimer = window.setTimeout(() => this.updateLabelVisibility(), 60);
     });
 
     this.cy.on("tap", "node.paper", (evt) => {
@@ -486,31 +483,138 @@ export class CitationGraphView {
 
   updateLabelVisibility(): void {
     const isTimeline = this.layoutMode === "timeline";
-    const paperNodes = this.cy.nodes(".paper");
+    const paperNodes = this.cy.nodes(".paper").not(".ego-hidden");
     const total = paperNodes.length;
-    const zoomedIn = this.cy.zoom() >= 1.1;
+    const zoom = this.cy.zoom();
 
     this.cy.batch(() => {
-      paperNodes.forEach((ele) => {
-        const isSeed = ele.hasClass("seed");
-        ele.toggleClass("timeline-node", isTimeline);
+      if (this.labelMode !== "auto" || isTimeline) {
+        paperNodes.forEach((ele) => {
+          const isSeed = ele.hasClass("seed");
+          ele.toggleClass("timeline-node", isTimeline);
+          if (this.labelMode === "full") {
+            ele.data("displayLabel", ele.data("fullLabel"));
+            ele.removeClass("hide-label");
+          } else if (this.labelMode === "compact") {
+            ele.data("displayLabel", ele.data("compactLabel"));
+            ele.removeClass("hide-label");
+          } else if (this.labelMode === "hover") {
+            ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
+            ele.toggleClass("hide-label", !isSeed);
+          } else {
+            // Timeline Auto
+            ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
+            ele.removeClass("hide-label");
+          }
+        });
+        return;
+      }
 
-        if (this.labelMode === "full") {
-          ele.data("displayLabel", ele.data("fullLabel"));
-          ele.removeClass("hide-label");
-        } else if (this.labelMode === "compact") {
-          ele.data("displayLabel", ele.data("compactLabel"));
-          ele.removeClass("hide-label");
-        } else if (this.labelMode === "hover") {
-          ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
-          ele.toggleClass("hide-label", !isSeed);
-        } else {
-          ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
-          const isTopHub = ele.hasClass("top-hub");
-          const show = isSeed || isTopHub || isTimeline || total <= 20 || zoomedIn;
-          ele.toggleClass("hide-label", !show);
-        }
+      // Auto mode: screen-space collision-free labeling prioritized by importance
+      const sorted = (paperNodes.toArray() as NodeSingular[]).sort((a, b) => {
+        const prio = (n: NodeSingular): number => {
+          if (n.hasClass("primary-seed")) return 4;
+          if (n.hasClass("seed")) return 3;
+          if (n.hasClass("top-hub")) return 2;
+          if (n.hasClass("shared")) return 1;
+          return 0;
+        };
+        const dp = prio(b) - prio(a);
+        if (dp !== 0) return dp;
+        return ((b.data("inDegree") as number) ?? 0) - ((a.data("inDegree") as number) ?? 0);
       });
+
+      const placedBoxes: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+      const pad = 6;
+
+      for (const ele of sorted) {
+        ele.removeClass("timeline-node");
+        const isSeed = ele.hasClass("seed");
+        const isTopHub = ele.hasClass("top-hub");
+        const label = isSeed ? String(ele.data("fullLabel") ?? "") : String(ele.data("compactLabel") ?? "");
+        ele.data("displayLabel", label);
+
+        // At overview zoom on dense graphs, only consider seeds + top hubs + shared;
+        // as user zooms in, all nodes become eligible if their label doesn't collide.
+        const eligible = isSeed || isTopHub || total <= 18 || zoom >= 0.85;
+        if (!eligible) {
+          ele.addClass("hide-label");
+          continue;
+        }
+
+        const rp = ele.renderedPosition();
+        const rRadius = (((ele.data("size") as number) ?? 18) * zoom) / 2;
+        const approxW = Math.min(138, Math.max(68, label.length * 5.2));
+        const approxH = label.length > 22 ? 32 : 18;
+        const box = {
+          x1: rp.x - approxW / 2 - pad,
+          y1: rp.y + rRadius + 2,
+          x2: rp.x + approxW / 2 + pad,
+          y2: rp.y + rRadius + 2 + approxH + pad,
+        };
+
+        const overlaps =
+          !isSeed &&
+          placedBoxes.some(
+            (b) => !(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)
+          );
+
+        if (overlaps) {
+          ele.addClass("hide-label");
+        } else {
+          ele.removeClass("hide-label");
+          placedBoxes.push(box);
+        }
+      }
+    });
+  }
+
+  private resolveNodeOverlaps(): void {
+    const nodes = this.cy.nodes(".paper").not(".ego-hidden").toArray() as NodeSingular[];
+    if (nodes.length < 2) return;
+
+    const coords = nodes.map((n) => {
+      const p = n.position();
+      const size = (n.data("size") as number) ?? 18;
+      const isHub = n.hasClass("seed") || n.hasClass("shared") || n.hasClass("top-hub");
+      return { node: n, x: p.x, y: p.y, r: size / 2 + (isHub ? 26 : 16) };
+    });
+
+    for (let iter = 0; iter < 45; iter += 1) {
+      let moved = false;
+      for (let i = 0; i < coords.length; i += 1) {
+        const a = coords[i];
+        for (let j = i + 1; j < coords.length; j += 1) {
+          const b = coords[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let dist = Math.hypot(dx, dy);
+          const minDist = a.r + b.r;
+          if (dist < minDist) {
+            if (dist < 0.01) {
+              const angle = ((i * 7 + j * 13) % 360) * (Math.PI / 180);
+              dx = Math.cos(angle);
+              dy = Math.sin(angle);
+              dist = 1;
+            }
+            const push = (minDist - dist) * 0.55;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            a.x -= ux * push;
+            a.y -= uy * push;
+            b.x += ux * push;
+            b.y += uy * push;
+            moved = true;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+
+    this.cy.batch(() => {
+      for (const item of coords) {
+        item.node.position({ x: item.x, y: item.y });
+      }
     });
   }
 
@@ -777,13 +881,18 @@ export class CitationGraphView {
       fit: true,
       padding: 68,
       packComponents: true,
-      nodeSeparation: 115,
-      nodeRepulsion: () => 24000,
-      idealEdgeLength: () => 165,
-      edgeElasticity: () => 0.35,
-      gravity: 0.22,
-      gravityRange: 3.8,
-      stop: () => this.updateLabelVisibility(),
+      nodeDimensionsIncludeLabels: true,
+      nodeSeparation: 145,
+      nodeRepulsion: () => 85000,
+      idealEdgeLength: () => 210,
+      edgeElasticity: () => 0.28,
+      gravity: 0.14,
+      gravityRange: 4.0,
+      stop: () => {
+        this.resolveNodeOverlaps();
+        this.cy.fit(undefined, 56);
+        this.updateLabelVisibility();
+      },
     } as unknown as LayoutOptions;
     this.cy.layout(fcoseOptions).run();
   }
