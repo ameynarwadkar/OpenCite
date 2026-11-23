@@ -3,10 +3,27 @@
   const THEME_KEY = "citation-graph:theme";
   const HISTORY_KEY = "citation-graph:history";
   const MAX_HISTORY_ITEMS = 15;
+  const MAX_UNDO_STEPS = 20;
+  const EXPANSION_EDGE_PALETTE = [
+    "#0ea5e9", // sky
+    "#10b981", // emerald
+    "#f97316", // orange
+    "#ec4899", // pink
+    "#8b5cf6", // violet
+    "#14b8a6", // teal
+    "#eab308", // gold
+    "#f43f5e", // rose
+    "#06b6d4", // cyan
+    "#84cc16", // lime
+  ];
 
   const state = {
     nodes: new Map(), // id -> PaperNode
     edges: new Set(), // "source->target"
+    edgeColors: new Map(), // "source->target" -> hex color (for non-seed expansions)
+    expansionColorByPaper: new Map(), // paperId -> hex color
+    expansionColorIdx: 0,
+    undoStack: [],
     selectedId: null,
     activeHistoryId: null,
   };
@@ -25,6 +42,7 @@
   const sharedOnlyToggle = document.getElementById("shared-only-toggle");
   const searchInput = document.getElementById("search-input");
   const enrichYearsBtn = document.getElementById("enrich-years-btn");
+  const undoBtn = document.getElementById("undo-btn");
   const fitBtn = document.getElementById("fit-btn");
   const exportBtn = document.getElementById("export-btn");
   const clearBtn = document.getElementById("clear-btn");
@@ -135,6 +153,13 @@
         },
       },
       {
+        selector: "node.paper.expanded[expansionColor]:unselected",
+        style: {
+          "border-width": 3.5,
+          "border-color": "data(expansionColor)",
+        },
+      },
+      {
         selector: "node.paper:selected",
         style: {
           label: "data(fullLabel)",
@@ -175,6 +200,16 @@
           "curve-style": "bezier",
           opacity: 0.6,
           "z-index": 1,
+        },
+      },
+      {
+        selector: "edge[edgeColor]",
+        style: {
+          width: 1.85,
+          "line-color": "data(edgeColor)",
+          "target-arrow-color": "data(edgeColor)",
+          opacity: 0.85,
+          "z-index": 3,
         },
       },
       {
@@ -293,17 +328,83 @@
   function remapEdges(oldId, newId) {
     if (oldId === newId) return;
     const next = new Set();
+    const nextColors = new Map();
     for (const key of state.edges) {
       const [s, t] = key.split("->");
       const ns = s === oldId ? newId : s;
       const nt = t === oldId ? newId : t;
-      if (ns !== nt) next.add(`${ns}->${nt}`);
+      if (ns !== nt) {
+        const newKey = `${ns}->${nt}`;
+        next.add(newKey);
+        if (state.edgeColors.has(key)) {
+          nextColors.set(newKey, state.edgeColors.get(key));
+        }
+      }
     }
     state.edges = next;
+    state.edgeColors = nextColors;
+    if (state.expansionColorByPaper.has(oldId)) {
+      const c = state.expansionColorByPaper.get(oldId);
+      state.expansionColorByPaper.delete(oldId);
+      state.expansionColorByPaper.set(newId, c);
+    }
     if (state.selectedId === oldId) state.selectedId = newId;
   }
 
-  function mergeGraphPayload(payload, preferredOldSourceId = null) {
+  function getColorForExpandedPaper(paperId) {
+    if (state.expansionColorByPaper.has(paperId)) {
+      return state.expansionColorByPaper.get(paperId);
+    }
+    const color = EXPANSION_EDGE_PALETTE[state.expansionColorIdx % EXPANSION_EDGE_PALETTE.length];
+    state.expansionColorIdx++;
+    state.expansionColorByPaper.set(paperId, color);
+    return color;
+  }
+
+  function updateUndoButton() {
+    const count = state.undoStack.length;
+    undoBtn.disabled = count === 0;
+    if (count > 0) {
+      const last = state.undoStack[count - 1];
+      undoBtn.title = `${last.label} (Ctrl+Z)`;
+    } else {
+      undoBtn.title = "Nothing to undo";
+    }
+  }
+
+  function pushUndoSnapshot(label) {
+    state.undoStack.push({
+      label,
+      nodes: Array.from(state.nodes.entries()).map(([id, n]) => [id, { ...n, authors: [...(n.authors || [])] }]),
+      edges: Array.from(state.edges),
+      edgeColors: Array.from(state.edgeColors.entries()),
+      expansionColorByPaper: Array.from(state.expansionColorByPaper.entries()),
+      expansionColorIdx: state.expansionColorIdx,
+      selectedId: state.selectedId,
+    });
+    if (state.undoStack.length > MAX_UNDO_STEPS) {
+      state.undoStack.shift();
+    }
+    updateUndoButton();
+  }
+
+  function undoLastAction() {
+    if (state.undoStack.length === 0) return;
+    const snap = state.undoStack.pop();
+    state.nodes = new Map(snap.nodes);
+    state.edges = new Set(snap.edges);
+    state.edgeColors = new Map(snap.edgeColors);
+    state.expansionColorByPaper = new Map(snap.expansionColorByPaper);
+    state.expansionColorIdx = snap.expansionColorIdx;
+    state.selectedId = snap.selectedId;
+    hideTooltip();
+    updateUndoButton();
+    renderGraph();
+    saveCurrentToHistory();
+    showMessages([`Reverted: ${snap.label}`]);
+  }
+
+  function mergeGraphPayload(payload, preferredOldSourceId = null, edgeColor = null) {
     const idMap = new Map();
 
     for (const incoming of payload.nodes || []) {
@@ -353,7 +454,12 @@
       const src = idMap.get(edge.source) || edge.source;
       const dst = idMap.get(edge.target) || edge.target;
       if (src !== dst && state.nodes.has(src) && state.nodes.has(dst)) {
-        state.edges.add(`${src}->${dst}`);
+        const edgeKey = `${src}->${dst}`;
+        const isNew = !state.edges.has(edgeKey);
+        state.edges.add(edgeKey);
+        if (edgeColor && (isNew || !state.edgeColors.has(edgeKey))) {
+          state.edgeColors.set(edgeKey, edgeColor);
+        }
       }
     }
 
@@ -427,22 +533,28 @@
         const classes = ["paper"];
         if (node.is_seed) classes.push("seed");
         else if (isShared) classes.push("shared");
-        if (node.is_expanded && !node.is_seed) classes.push("expanded");
+        if ((node.is_expanded || node.is_cited_by_expanded) && !node.is_seed) {
+          classes.push("expanded");
+        }
 
         const fullLabel = formatFullLabel(node);
         const compactLabel = formatCompactLabel(node);
+        const nodeData = {
+          id,
+          fullLabel,
+          compactLabel,
+          displayLabel: compactLabel,
+          size,
+          inDegree: deg,
+          year: node.year ?? null,
+        };
+        if (state.expansionColorByPaper.has(id)) {
+          nodeData.expansionColor = state.expansionColorByPaper.get(id);
+        }
 
         cy.add({
           group: "nodes",
-          data: {
-            id,
-            fullLabel,
-            compactLabel,
-            displayLabel: compactLabel,
-            size,
-            inDegree: deg,
-            year: node.year ?? null,
-          },
+          data: nodeData,
           classes: classes.join(" "),
         });
       }
@@ -450,9 +562,13 @@
       for (const key of state.edges) {
         const [source, target] = key.split("->");
         if (visibleIds.has(source) && visibleIds.has(target)) {
+          const edgeData = { id: key, source, target };
+          if (state.edgeColors.has(key)) {
+            edgeData.edgeColor = state.edgeColors.get(key);
+          }
           cy.add({
             group: "edges",
-            data: { id: key, source, target },
+            data: edgeData,
           });
         }
       }
@@ -869,6 +985,11 @@
         "line-color": isDark ? "#334155" : "#cbd5e1",
         "target-arrow-color": isDark ? "#475569" : "#94a3b8",
       })
+      .selector("edge[edgeColor]")
+      .style({
+        "line-color": "data(edgeColor)",
+        "target-arrow-color": "data(edgeColor)",
+      })
       .selector("edge.highlighted")
       .style({
         "line-color": isDark ? "#818cf8" : "#4f46e5",
@@ -924,6 +1045,9 @@
         const [source, target] = k.split("->");
         return { source, target };
       }),
+      edgeColors: Array.from(state.edgeColors.entries()),
+      expansionColorByPaper: Array.from(state.expansionColorByPaper.entries()),
+      expansionColorIdx: state.expansionColorIdx,
     };
 
     const filtered = items.filter((item) => item.id !== id);
@@ -948,8 +1072,13 @@
 
     state.nodes.clear();
     state.edges.clear();
+    state.edgeColors = new Map(item.edgeColors || []);
+    state.expansionColorByPaper = new Map(item.expansionColorByPaper || []);
+    state.expansionColorIdx = item.expansionColorIdx || state.expansionColorByPaper.size;
+    state.undoStack = [];
     state.selectedId = null;
     state.activeHistoryId = item.id;
+    updateUndoButton();
     hideTooltip();
     showMessages([]);
 
@@ -1118,7 +1247,9 @@
         return;
       }
       if (data.nodes?.length) {
-        mergeGraphPayload(data, node.id);
+        pushUndoSnapshot(`Expand references of "${formatCompactLabel(node)}"`);
+        const edgeColor = node.is_seed ? null : getColorForExpandedPaper(node.id);
+        mergeGraphPayload(data, node.id, edgeColor);
         saveCurrentToHistory();
       } else {
         openInspector(node.id);
@@ -1163,7 +1294,9 @@
         return;
       }
       if (data.nodes?.length) {
-        mergeGraphPayload(data, node.id);
+        pushUndoSnapshot(`Expand cited by "${formatCompactLabel(node)}"`);
+        const edgeColor = node.is_seed ? null : getColorForExpandedPaper(node.id);
+        mergeGraphPayload(data, node.id, edgeColor);
         saveCurrentToHistory();
       } else {
         openInspector(node.id);
@@ -1271,6 +1404,17 @@
   sharedOnlyToggle.addEventListener("change", () => renderGraph());
   searchInput.addEventListener("input", () => applySearchHighlight());
   enrichYearsBtn.addEventListener("click", resolveUnknownYears);
+  undoBtn.addEventListener("click", undoLastAction);
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+      const tag = (document.activeElement?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (state.undoStack.length > 0) {
+        e.preventDefault();
+        undoLastAction();
+      }
+    }
+  });
   fitBtn.addEventListener("click", () => {
     cy.fit(undefined, 56);
     updateLabelVisibility();
@@ -1283,6 +1427,9 @@
         const [source, target] = k.split("->");
         return { source, target };
       }),
+      edgeColors: Array.from(state.edgeColors.entries()),
+      expansionColorByPaper: Array.from(state.expansionColorByPaper.entries()),
+      expansionColorIdx: state.expansionColorIdx,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1296,8 +1443,13 @@
   clearBtn.addEventListener("click", () => {
     state.nodes.clear();
     state.edges.clear();
+    state.edgeColors.clear();
+    state.expansionColorByPaper.clear();
+    state.expansionColorIdx = 0;
+    state.undoStack = [];
     state.selectedId = null;
     state.activeHistoryId = null;
+    updateUndoButton();
     hideTooltip();
     showMessages([]);
     renderGraph();
