@@ -536,7 +536,13 @@ export class GraphStore {
     this.primarySeedId =
       item.primarySeedId ?? (item.nodes ?? []).find((n) => n.is_seed)?.id ?? null;
 
-    return item.layout ?? "cose";
+    const rawLayout = item.layout as string | undefined;
+    if (rawLayout === "flow" || rawLayout === "timeline" || rawLayout === "ego" || rawLayout === "cose") {
+      return rawLayout;
+    }
+    if (rawLayout === "breadthfirst") return "flow";
+    if (rawLayout === "concentric") return "ego";
+    return "cose";
   }
 
   deleteHistory(id: string): void {

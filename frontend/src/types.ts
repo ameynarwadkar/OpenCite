@@ -62,7 +62,7 @@ export interface PathResult {
   kind: "directed" | "reverse" | "undirected";
 }
 
-export type LayoutMode = "cose" | "timeline" | "breadthfirst" | "concentric";
+export type LayoutMode = "cose" | "flow" | "timeline" | "ego";
 export type LabelMode = "auto" | "compact" | "full" | "hover";
 export type ThemeMode = "light" | "dark";
 

@@ -10,7 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "cytoscape": "^3.30.2"
+    "cytoscape": "^3.30.2",
+    "cytoscape-elk": "^2.4.0",
+    "cytoscape-fcose": "^2.2.0",
+    "elkjs": "^0.12.1"
   },
   "devDependencies": {
     "@types/cytoscape": "^3.21.9",

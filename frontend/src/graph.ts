@@ -1,6 +1,11 @@
-import cytoscape, { type Core, type NodeSingular } from "cytoscape";
+import cytoscape, { type Core, type LayoutOptions, type NodeSingular } from "cytoscape";
+import elk from "cytoscape-elk";
+import fcose from "cytoscape-fcose";
 import { formatCompactLabel, formatFullLabel, type GraphStore } from "./store";
 import type { LabelMode, LayoutMode, ThemeMode } from "./types";
+
+cytoscape.use(fcose);
+cytoscape.use(elk);
 
 export interface GraphViewCallbacks {
   onSelectNode: (nodeId: string) => void;
@@ -214,6 +219,18 @@ export class CitationGraphView {
             "border-width": 3.5,
             "border-color": "#ec4899",
             "z-index": 45,
+          },
+        },
+        {
+          selector: ".ego-hidden",
+          style: { display: "none" },
+        },
+        {
+          selector: "node.paper.ego-center",
+          style: {
+            "border-width": 4,
+            "border-color": "#38bdf8",
+            "z-index": 30,
           },
         },
         {
@@ -633,40 +650,71 @@ export class CitationGraphView {
       .run();
   }
 
-  private applyCleanStarRadialLayout(seedEle: NodeSingular, leafEles: cytoscape.NodeCollection): void {
-    const sortedLeaves = leafEles.toArray().sort((a, b) => {
-      const ya = (a.data("year") as number | null) ?? 0;
-      const yb = (b.data("year") as number | null) ?? 0;
-      if (ya !== yb) return ya - yb;
-      return String(a.data("fullLabel") ?? "").localeCompare(String(b.data("fullLabel") ?? ""));
+  private applyEgoLayout(): void {
+    this.cy.nodes(".year-header").remove();
+    const paperNodes = this.cy.nodes(".paper");
+    if (paperNodes.length === 0) return;
+
+    const centerId =
+      (this.store.selectedId && this.cy.getElementById(this.store.selectedId).nonempty()
+        ? this.store.selectedId
+        : null) ??
+      (this.store.primarySeedId && this.cy.getElementById(this.store.primarySeedId).nonempty()
+        ? this.store.primarySeedId
+        : null) ??
+      paperNodes[0].id();
+
+    const centerEle = this.cy.getElementById(centerId) as NodeSingular;
+    const ring1 = centerEle.neighborhood("node.paper");
+    const ring1Ids = new Set<string>(ring1.map((n) => n.id()));
+    const ring2 = ring1
+      .neighborhood("node.paper")
+      .filter((n) => n.id() !== centerId && !ring1Ids.has(n.id()));
+
+    const keepIds = new Set<string>([centerId, ...ring1Ids, ...ring2.map((n) => n.id())]);
+
+    this.cy.batch(() => {
+      this.cy.elements().removeClass("ego-hidden ego-center");
+      centerEle.addClass("ego-center");
+      this.cy.nodes(".paper").forEach((n) => {
+        if (!keepIds.has(n.id())) n.addClass("ego-hidden");
+      });
+      this.cy.edges().forEach((e) => {
+        if (!keepIds.has(e.source().id()) || !keepIds.has(e.target().id())) {
+          e.addClass("ego-hidden");
+        }
+      });
     });
 
     const positions: Record<string, { x: number; y: number }> = {
-      [seedEle.id()]: { x: 0, y: 0 },
+      [centerId]: { x: 0, y: 0 },
     };
 
-    const minArcSpacing = 96;
-    const remaining = sortedLeaves.slice();
-    let ringIdx = 0;
-
-    while (remaining.length > 0) {
-      const radius = 190 + ringIdx * 135;
-      const capacity = Math.max(10, Math.floor((2 * Math.PI * radius) / minArcSpacing));
-      const ringNodes = remaining.splice(0, capacity);
-      const angleStep = (2 * Math.PI) / ringNodes.length;
-      const angleOffset = (ringIdx % 2) * (angleStep / 2) - Math.PI / 2;
-
-      ringNodes.forEach((ele, i) => {
-        const theta = angleOffset + i * angleStep;
+    const placeRing = (nodes: cytoscape.NodeCollection, baseRadius: number, minArc: number): number => {
+      const list = nodes.toArray().sort((a, b) => {
+        const ya = (a.data("year") as number | null) ?? 0;
+        const yb = (b.data("year") as number | null) ?? 0;
+        if (ya !== yb) return ya - yb;
+        return String(a.data("fullLabel") ?? "").localeCompare(String(b.data("fullLabel") ?? ""));
+      });
+      if (list.length === 0) return baseRadius;
+      const radius = Math.max(baseRadius, (list.length * minArc) / (2 * Math.PI));
+      const step = (2 * Math.PI) / list.length;
+      list.forEach((ele, idx) => {
+        const theta = -Math.PI / 2 + idx * step;
         positions[ele.id()] = {
           x: Math.cos(theta) * radius,
           y: Math.sin(theta) * radius,
         };
       });
-      ringIdx += 1;
-    }
+      return radius;
+    };
 
-    this.cy
+    const r1 = placeRing(ring1, 210, 74);
+    placeRing(ring2, Math.max(390, r1 + 170), 68);
+
+    const visibleEles = this.cy.elements().not(".ego-hidden");
+    visibleEles
       .layout({
         name: "preset",
         positions,
@@ -683,6 +731,14 @@ export class CitationGraphView {
     const paperNodes = this.cy.nodes(".paper");
     if (paperNodes.length === 0) return;
 
+    if (this.layoutMode === "ego") {
+      this.applyEgoLayout();
+      return;
+    }
+
+    // Restore any nodes hidden by ego-network mode
+    this.cy.elements().removeClass("ego-hidden ego-center");
+
     if (this.layoutMode === "timeline") {
       this.applyTimelineLayout();
       return;
@@ -690,71 +746,45 @@ export class CitationGraphView {
 
     this.cy.nodes(".year-header").remove();
 
-    if (this.layoutMode === "cose") {
-      const seeds = this.cy.nodes(".paper.seed");
-      const expanded = this.cy.nodes(".paper.expanded");
-      const isPureStar =
-        !randomize &&
-        seeds.length === 1 &&
-        expanded.length === 0 &&
-        paperNodes.length > 8 &&
-        this.cy.edges().toArray().every((e) => e.source().id() === seeds[0].id());
-      if (isPureStar) {
-        this.applyCleanStarRadialLayout(seeds[0], paperNodes.not(seeds[0]));
-        return;
-      }
-    }
-
-    if (this.layoutMode === "breadthfirst") {
-      this.cy
-        .layout({
-          name: "breadthfirst",
-          directed: true,
-          spacingFactor: 1.75,
-          avoidOverlap: true,
-          animate: true,
-          animationDuration: 380,
-          padding: 64,
-          stop: () => this.updateLabelVisibility(),
-        })
-        .run();
-      return;
-    }
-
-    if (this.layoutMode === "concentric") {
-      this.cy
-        .layout({
-          name: "concentric",
-          concentric: (node) =>
-            node.hasClass("seed") ? 100 : ((node.data("inDegree") as number) ?? 0) * 10 + 1,
-          levelWidth: () => 2,
-          minNodeSpacing: 95,
-          avoidOverlap: true,
-          animate: true,
-          animationDuration: 380,
-          padding: 64,
-          stop: () => this.updateLabelVisibility(),
-        })
-        .run();
-      return;
-    }
-
-    this.cy
-      .layout({
-        name: "cose",
-        randomize,
+    if (this.layoutMode === "flow") {
+      const elkOptions = {
+        name: "elk",
         animate: true,
-        animationDuration: 450,
-        padding: 72,
-        nodeRepulsion: () => 680000,
-        idealEdgeLength: () => 260,
-        edgeElasticity: () => 45,
-        nodeOverlap: 110,
-        componentSpacing: 160,
-        gravity: 0.08,
-        numIter: 1400,
+        animationDuration: 420,
+        fit: true,
+        padding: 64,
+        elk: {
+          algorithm: "layered",
+          "elk.direction": "LEFT",
+          "elk.spacing.nodeNode": 42,
+          "elk.layered.spacing.nodeNodeBetweenLayers": 115,
+          "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+          "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+        },
         stop: () => this.updateLabelVisibility(),
-      })
-      .run();
+      } as unknown as LayoutOptions;
+      this.cy.layout(elkOptions).run();
+      return;
+    }
+
+    // Default: Community-aware force-directed clustering (fCoSE)
+    const fcoseOptions = {
+      name: "fcose",
+      quality: "proof",
+      randomize,
+      animate: true,
+      animationDuration: 460,
+      fit: true,
+      padding: 68,
+      packComponents: true,
+      nodeSeparation: 115,
+      nodeRepulsion: () => 24000,
+      idealEdgeLength: () => 165,
+      edgeElasticity: () => 0.35,
+      gravity: 0.22,
+      gravityRange: 3.8,
+      stop: () => this.updateLabelVisibility(),
+    } as unknown as LayoutOptions;
+    this.cy.layout(fcoseOptions).run();
   }
 }
