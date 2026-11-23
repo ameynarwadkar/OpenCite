@@ -7,6 +7,7 @@ import {
   apiLookupIdentifiers,
   apiUploadPdfs,
 } from "./api";
+import { enhanceSelect } from "./dropdown";
 import { CitationGraphView } from "./graph";
 import { formatCompactLabel, formatFullLabel, GraphStore } from "./store";
 import type { LabelMode, LayoutMode, PaperNode, ThemeMode } from "./types";
@@ -644,6 +645,7 @@ function renderHistory(): void {
       const restoredLayout = store.restoreHistory(item.id);
       if (restoredLayout) {
         layoutSelect.value = restoredLayout;
+        layoutDropdown.sync();
         graphView.setLayoutMode(restoredLayout);
       }
       setDiscoverOpen(false);
@@ -1061,6 +1063,10 @@ try {
 } catch {
   // Ignore storage errors
 }
+const layoutDropdown = enhanceSelect(layoutSelect);
+enhanceSelect(labelModeSelect);
+enhanceSelect(discoverSortSelect);
+
 applyTheme(initialTheme);
 applyPanelLayout();
 renderHistory();
