@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -8,6 +9,9 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.graph_builder import GraphBuilder
 from backend.models import (
+    EnrichRequest,
+    EnrichResponse,
+    EnrichUpdate,
     ExpandRequest,
     ExpandResponse,
     GraphPayload,
@@ -227,4 +231,48 @@ async def expand_paper(
         nodes=built.nodes,
         edges=built.edges,
         warnings=built.warnings,
+    )
+
+
+@app.post("/api/papers/enrich", response_model=EnrichResponse)
+async def enrich_papers(
+    payload: EnrichRequest,
+    resolver: PaperResolver = Depends(get_resolver),
+) -> EnrichResponse:
+    """Resolve missing publication years & metadata for undated nodes via OpenAlex + Crossref."""
+    max_batch = 40
+    targets = payload.nodes[:max_batch]
+    warnings: list[str] = []
+    if len(payload.nodes) > max_batch:
+        warnings.append(
+            f"Resolving first {max_batch} of {len(payload.nodes)} undated papers."
+        )
+
+    sem = asyncio.Semaphore(5)
+
+    async def _resolve_one(item):
+        async with sem:
+            enriched = await resolver.enrich_node(
+                title=item.title,
+                year=item.year,
+                doi=item.doi,
+                arxiv_id=item.arxiv_id,
+                openalex_id=item.openalex_id,
+                raw_citation=item.raw_citation,
+            )
+            return item.id, enriched
+
+    results = await asyncio.gather(*(_resolve_one(n) for n in targets))
+    updates: list[EnrichUpdate] = []
+    unresolved = 0
+    for old_id, enriched in results:
+        if enriched is not None and enriched.year is not None:
+            updates.append(EnrichUpdate(old_id=old_id, node=enriched))
+        else:
+            unresolved += 1
+
+    return EnrichResponse(
+        updates=updates,
+        unresolved_count=unresolved,
+        warnings=warnings,
     )

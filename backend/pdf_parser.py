@@ -30,7 +30,8 @@ _STOP_HEADING_RE = re.compile(
 )
 _PAGE_NUM_RE = re.compile(r"^\s*\d{1,4}\s*$")
 _YEAR_PAREN_RE = re.compile(r"\(((?:19|20)\d{2})[a-z]?\)")
-_YEAR_ANY_RE = re.compile(r"\b((?:19[5-9]\d|20[0-3]\d))\b")
+_YEAR_ANY_RE = re.compile(r"\b((?:19[5-9]\d|20[0-3]\d))[a-z]?\b")
+_YEAR_APOSTROPHE_RE = re.compile(r"(?:[A-Za-z]\s*|[\s(])['’](\d{2})\b")
 _QUOTED_TITLE_RE = re.compile(r'["“]([^"”]{10,300})["”]')
 _BRACKET_START_RE = re.compile(r"^\s*\[\d{1,4}\]\s+")
 _DOT_NUM_START_RE = re.compile(r"^\s*(\d{1,4})\.\s+")
@@ -151,6 +152,19 @@ def _extract_arxiv_id(text: str) -> str | None:
     return normalize_arxiv_id(match.group(1))
 
 
+def _infer_year_from_arxiv(arxiv_id: str | None) -> int | None:
+    if not arxiv_id:
+        return None
+    if re.match(r"^\d{4}\.", arxiv_id):
+        yy = int(arxiv_id[:2])
+        return 2000 + yy if yy < 50 else 1900 + yy
+    old_match = re.search(r"/(\d{2})\d{5}$", arxiv_id)
+    if old_match:
+        yy = int(old_match.group(1))
+        return 1900 + yy if yy >= 90 else 2000 + yy
+    return None
+
+
 def _extract_year(text: str) -> int | None:
     paren = _YEAR_PAREN_RE.search(text)
     if paren:
@@ -159,6 +173,10 @@ def _extract_year(text: str) -> int | None:
     if matches:
         # Prefer the last plausible year in the citation (often near venue/date)
         return int(matches[-1])
+    apos = _YEAR_APOSTROPHE_RE.findall(text)
+    if apos:
+        yy = int(apos[-1])
+        return 2000 + yy if yy <= 35 else 1900 + yy
     return None
 
 
@@ -207,7 +225,7 @@ def _parse_single_reference(raw_entry: str) -> ParsedReference:
     cleaned = _clean_ref_text(raw_entry)
     doi = _extract_doi(cleaned)
     arxiv_id = _extract_arxiv_id(cleaned)
-    year = _extract_year(cleaned)
+    year = _extract_year(cleaned) or _infer_year_from_arxiv(arxiv_id)
 
     body = re.sub(r"^\s*(?:\[\d{1,4}\]|\d{1,4}\.)\s*", "", cleaned).strip()
     authors: list[str] = []

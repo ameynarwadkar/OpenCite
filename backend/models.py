@@ -49,3 +49,28 @@ class ExpandNodeInput(BaseModel):
 
 class ExpandRequest(BaseModel):
     node: ExpandNodeInput
+
+
+class EnrichNodeInput(BaseModel):
+    id: str
+    title: str | None = None
+    year: int | None = None
+    doi: str | None = None
+    arxiv_id: str | None = None
+    openalex_id: str | None = None
+    raw_citation: str | None = None
+
+
+class EnrichRequest(BaseModel):
+    nodes: list[EnrichNodeInput] = Field(default_factory=list)
+
+
+class EnrichUpdate(BaseModel):
+    old_id: str
+    node: PaperNode
+
+
+class EnrichResponse(BaseModel):
+    updates: list[EnrichUpdate] = Field(default_factory=list)
+    unresolved_count: int = 0
+    warnings: list[str] = Field(default_factory=list)

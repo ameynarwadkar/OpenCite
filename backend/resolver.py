@@ -18,6 +18,7 @@ from backend.graph_builder import (
 from backend.models import PaperNode
 
 OPENALEX_API = "https://api.openalex.org"
+CROSSREF_API = "https://api.crossref.org/works"
 ARXIV_API = "https://export.arxiv.org/api/query"
 USER_AGENT = "citation-graph/0.1 (mailto:citation-graph@local.dev)"
 WORK_SELECT_FIELDS = (
@@ -430,3 +431,123 @@ class PaperResolver:
         finally:
             if should_close:
                 await client.aclose()
+
+    @staticmethod
+    def _extract_crossref_year(item: dict) -> int | None:
+        for field in ("published-print", "published-online", "issued", "created"):
+            obj = item.get(field)
+            if isinstance(obj, dict):
+                parts = obj.get("date-parts")
+                if isinstance(parts, list) and parts and isinstance(parts[0], list) and parts[0]:
+                    yr = parts[0][0]
+                    if isinstance(yr, int) and 1900 <= yr <= 2100:
+                        return yr
+        return None
+
+    async def resolve_via_crossref(
+        self, title: str | None = None, raw_citation: str | None = None
+    ) -> PaperNode | None:
+        """Resolve an undated or local reference via Crossref bibliographic search."""
+        query = (raw_citation or title or "").strip()
+        if len(query) < 8:
+            return None
+
+        client, should_close = self._get_client()
+        try:
+            data = await self._get_json(
+                client,
+                CROSSREF_API,
+                params={"query.bibliographic": query[:300], "rows": 3},
+            )
+            items = (data or {}).get("message", {}).get("items") or []
+            if not isinstance(items, list):
+                return None
+
+            best_item: dict | None = None
+            best_score = 0.0
+            ref_title = (title or "").strip()
+            raw_tokens = set(normalize_title(raw_citation or title).split())
+
+            for item in items:
+                titles = item.get("title") or []
+                cand_title = str(titles[0]).strip() if titles else ""
+                if not cand_title:
+                    continue
+                score = _title_similarity(ref_title, cand_title) if ref_title else 0.0
+                # Also check how many candidate title tokens appear inside raw_citation
+                cand_tokens = set(normalize_title(cand_title).split())
+                if cand_tokens and raw_tokens:
+                    containment = len(cand_tokens & raw_tokens) / len(cand_tokens)
+                    score = max(score, containment * 0.9)
+                if score > best_score:
+                    best_score = score
+                    best_item = item
+
+            if best_item is None or best_score < 0.65:
+                return None
+
+            cand_titles = best_item.get("title") or []
+            matched_title = str(cand_titles[0]).strip() if cand_titles else (ref_title or "Untitled Paper")
+            year = self._extract_crossref_year(best_item)
+            doi = normalize_doi(best_item.get("DOI"))
+            authors: list[str] = []
+            for a in best_item.get("author") or []:
+                if isinstance(a, dict):
+                    full = " ".join(p for p in (a.get("given"), a.get("family")) if p).strip()
+                    if full:
+                        authors.append(full)
+                if len(authors) >= 12:
+                    break
+            containers = best_item.get("container-title") or []
+            venue = str(containers[0]).strip() if containers else None
+
+            return PaperNode(
+                id=make_canonical_id(doi=doi, title=matched_title, year=year),
+                title=matched_title,
+                authors=authors,
+                year=year,
+                venue=venue,
+                doi=doi,
+                url=build_default_url(doi, None, None),
+                raw_citation=raw_citation,
+                is_seed=False,
+                is_expanded=False,
+                expandable=True,
+            )
+        finally:
+            if should_close:
+                await client.aclose()
+
+    async def enrich_node(
+        self,
+        *,
+        title: str | None = None,
+        year: int | None = None,
+        doi: str | None = None,
+        arxiv_id: str | None = None,
+        openalex_id: str | None = None,
+        raw_citation: str | None = None,
+    ) -> PaperNode | None:
+        """Attempt to resolve missing publication year & metadata via OpenAlex then Crossref."""
+        work: dict | None = None
+        for candidate in (openalex_id, doi, arxiv_id):
+            if candidate:
+                work, _, _ = await self.fetch_work_by_identifier(candidate)
+                if work is not None:
+                    break
+
+        if work is None and title:
+            work = await self.resolve_by_title(title, year=year)
+
+        if work is not None:
+            node = openalex_work_to_node(work, is_seed=False, is_expanded=False)
+            if raw_citation:
+                node = node.model_copy(update={"raw_citation": raw_citation})
+            if node.year is not None or node.doi or node.openalex_id:
+                return node
+
+        # Crossref bibliographic fallback
+        cr_node = await self.resolve_via_crossref(title=title, raw_citation=raw_citation)
+        if cr_node is not None and (cr_node.year is not None or cr_node.doi):
+            return cr_node
+        return None

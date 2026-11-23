@@ -134,6 +134,25 @@ def test_parse_icml_acl_author_initials_and_corr_arxiv():
     assert r3.year == 2019
 
 
+def test_year_extraction_edge_cases():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 80, "Year Edge Cases Paper", 18),
+                (72, 130, "References", 12),
+                (72, 155, "[1] A. Author. \"Disambiguated Year Paper.\" ACL, 2024a.", 10),
+                (72, 175, "[2] B. Author. \"Shorthand Conference Paper.\" NeurIPS '20.", 10),
+                (72, 195, "[3] C. Author. \"Arxiv Only Preprint.\" CoRR, abs/2506.05176.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "years.pdf")
+    assert len(parsed.references) == 3
+    assert parsed.references[0].year == 2024
+    assert parsed.references[1].year == 2020
+    assert parsed.references[2].year == 2025
+
+
 def test_invalid_and_empty_pdf_raise():
     with pytest.raises(PDFParseError):
         parse_pdf_bytes(b"not a pdf", "bad.pdf")

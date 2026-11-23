@@ -66,6 +66,23 @@ def _make_mock_resolver() -> PaperResolver:
                     ]
                 },
             )
+        if request.url.host == "api.crossref.org":
+            return httpx.Response(
+                200,
+                json={
+                    "message": {
+                        "items": [
+                            {
+                                "DOI": "10.1000/crossref-hit",
+                                "title": ["Undated Conference Paper on Retrieval"],
+                                "published-print": {"date-parts": [[2021]]},
+                                "author": [{"given": "Jane", "family": "Doe"}],
+                                "container-title": ["EMNLP"],
+                            }
+                        ]
+                    }
+                },
+            )
         return httpx.Response(404, json={"error": "not found"})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -141,6 +158,36 @@ def test_pdf_upload_endpoint_and_invalid_pdf():
             files=[("files", ("broken.pdf", b"not a pdf", "application/pdf"))],
         )
         assert bad.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_enrich_endpoint_uses_crossref_fallback():
+    resolver = _make_mock_resolver()
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            "/api/papers/enrich",
+            json={
+                "nodes": [
+                    {
+                        "id": "local:abc123",
+                        "title": "Undated Conference Paper on Retrieval",
+                        "year": None,
+                        "raw_citation": "Doe, J. Undated Conference Paper on Retrieval. EMNLP.",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["unresolved_count"] == 0
+        assert len(data["updates"]) == 1
+        upd = data["updates"][0]
+        assert upd["old_id"] == "local:abc123"
+        assert upd["node"]["year"] == 2021
+        assert upd["node"]["doi"] == "10.1000/crossref-hit"
     finally:
         app.dependency_overrides.clear()
 

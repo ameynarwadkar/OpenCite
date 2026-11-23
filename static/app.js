@@ -24,6 +24,7 @@
   const labelModeSelect = document.getElementById("label-mode-select");
   const sharedOnlyToggle = document.getElementById("shared-only-toggle");
   const searchInput = document.getElementById("search-input");
+  const enrichYearsBtn = document.getElementById("enrich-years-btn");
   const fitBtn = document.getElementById("fit-btn");
   const exportBtn = document.getElementById("export-btn");
   const clearBtn = document.getElementById("clear-btn");
@@ -468,14 +469,23 @@
   function updateStats(inDeg) {
     let seeds = 0;
     let shared = 0;
+    let unknownYears = 0;
     for (const [id, node] of state.nodes.entries()) {
       if (node.is_seed) seeds++;
       else if ((inDeg.get(id) || 0) >= 2) shared++;
+      if (!node.year) unknownYears++;
     }
     statSeeds.textContent = String(seeds);
     statNodes.textContent = String(state.nodes.size);
     statShared.textContent = String(shared);
     statEdges.textContent = String(state.edges.size);
+
+    if (unknownYears > 0) {
+      enrichYearsBtn.textContent = `Resolve Unknown Years (${unknownYears})`;
+      enrichYearsBtn.classList.remove("hidden");
+    } else {
+      enrichYearsBtn.classList.add("hidden");
+    }
   }
 
   function applyTimelineLayout() {
@@ -1107,6 +1117,58 @@
     }
   }
 
+  async function resolveUnknownYears() {
+    const undated = Array.from(state.nodes.values()).filter((n) => !n.year);
+    if (undated.length === 0) return;
+
+    enrichYearsBtn.disabled = true;
+    setLoading(true, `Looking up publication years for ${undated.length} paper(s) via OpenAlex & Crossref...`);
+    showMessages([]);
+    try {
+      const resp = await fetch("/api/papers/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodes: undated.map((n) => ({
+            id: n.id,
+            title: n.title,
+            year: n.year,
+            doi: n.doi,
+            arxiv_id: n.arxiv_id,
+            openalex_id: n.openalex_id,
+            raw_citation: n.raw_citation,
+          })),
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showMessages([data.detail || "Failed to resolve unknown years."], true);
+        return;
+      }
+
+      const updates = data.updates || [];
+      for (const upd of updates) {
+        mergeGraphPayload({ nodes: [upd.node], edges: [], source_id: upd.node.id }, upd.old_id);
+      }
+      if (updates.length > 0) {
+        saveCurrentToHistory();
+      }
+
+      const msgs = [...(data.warnings || [])];
+      if (updates.length > 0) {
+        msgs.unshift(`Resolved publication years for ${updates.length} of ${undated.length} paper(s).`);
+      } else {
+        msgs.unshift(`Could not find publication years for the remaining ${undated.length} paper(s) in OpenAlex or Crossref.`);
+      }
+      showMessages(msgs);
+    } catch (err) {
+      showMessages([`Network error: ${err.message}`], true);
+    } finally {
+      enrichYearsBtn.disabled = false;
+      setLoading(false);
+    }
+  }
+
   // Event wiring
   themeToggle.addEventListener("click", () => {
     const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -1149,6 +1211,7 @@
   labelModeSelect.addEventListener("change", () => updateLabelVisibility());
   sharedOnlyToggle.addEventListener("change", () => renderGraph());
   searchInput.addEventListener("input", () => applySearchHighlight());
+  enrichYearsBtn.addEventListener("click", resolveUnknownYears);
   fitBtn.addEventListener("click", () => {
     cy.fit(undefined, 56);
     updateLabelVisibility();
