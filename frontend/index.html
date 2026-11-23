@@ -12,175 +12,234 @@
   />
 </head>
 <body>
-  <div class="app-shell">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <header class="brand">
+  <div class="workspace-root">
+    <!-- Top Navigation Bar (52px) -->
+    <header class="top-nav">
+      <div class="nav-left">
+        <button id="toggle-left-btn" class="icon-btn active" type="button" title="Toggle Library" aria-label="Toggle Library">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        </button>
         <span class="brand-title">Citation Graph</span>
+        <nav class="nav-tabs" aria-label="Workspace views">
+          <button id="tab-workspace-btn" class="nav-tab active" type="button">Workspace</button>
+          <button id="tab-discover-btn" class="nav-tab" type="button">Discover</button>
+        </nav>
+      </div>
+
+      <div class="nav-center">
+        <div class="search-wrap">
+          <svg class="icon search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="search-input" class="nav-search" type="search" placeholder="Search papers, authors, year..." />
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <button id="export-btn" class="btn btn-outline btn-sm" type="button">Export</button>
         <button id="theme-toggle" class="icon-btn" type="button" title="Toggle theme" aria-label="Toggle theme"></button>
-      </header>
+        <button id="toggle-right-btn" class="icon-btn" type="button" title="Toggle Inspector (Esc)" aria-label="Toggle Inspector">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+        </button>
+      </div>
+    </header>
 
-      <!-- PDF Upload -->
-      <section class="section">
-        <span class="label">PDF</span>
-        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload PDF files">
-          <input id="pdf-input" type="file" accept=".pdf,application/pdf" multiple hidden />
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>Drop PDF or browse</span>
-        </div>
-      </section>
-
-      <!-- DOI / arXiv -->
-      <section class="section">
-        <label class="label" for="id-input">DOI / arXiv</label>
-        <textarea id="id-input" rows="2" placeholder="1706.03762&#10;1810.04805"></textarea>
-        <div class="btn-row">
-          <button id="lookup-btn" class="btn btn-primary" type="button">Add</button>
-          <button id="demo-btn" class="btn btn-outline" type="button">Demo</button>
-        </div>
-      </section>
-
-      <!-- Stats -->
-      <section class="stats-bar" aria-label="Graph stats">
-        <div class="stat"><strong id="stat-seeds">0</strong><span>Seeds</span></div>
-        <div class="stat"><strong id="stat-nodes">0</strong><span>Nodes</span></div>
-        <div class="stat"><strong id="stat-shared">0</strong><span>Shared</span></div>
-        <div class="stat"><strong id="stat-edges">0</strong><span>Edges</span></div>
-      </section>
-
-      <!-- Controls -->
-      <section class="section">
-        <div class="field-grid">
-          <div class="field">
-            <label class="label" for="layout-select">Layout</label>
-            <select id="layout-select" class="control">
-              <option value="cose">Radial / Force</option>
-              <option value="timeline">Timeline →</option>
-              <option value="breadthfirst">Hierarchy</option>
-              <option value="concentric">Concentric</option>
-            </select>
+    <!-- Main Workspace Body -->
+    <div class="workspace-body">
+      <!-- Left Sidebar: Library (260px default, collapsible & resizable) -->
+      <aside id="left-sidebar" class="left-sidebar" aria-label="Library">
+        <!-- Add Papers -->
+        <section class="section">
+          <span class="label">Add papers</span>
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload PDF files">
+            <input id="pdf-input" type="file" accept=".pdf,application/pdf" multiple hidden />
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Drop PDF or browse</span>
           </div>
-          <div class="field">
-            <label class="label" for="label-mode-select">Labels</label>
-            <select id="label-mode-select" class="control">
-              <option value="auto">Auto</option>
-              <option value="compact">Compact</option>
-              <option value="full">Full</option>
-              <option value="hover">Hover</option>
-            </select>
+          <textarea id="id-input" rows="2" placeholder="DOI or arXiv ID&#10;1706.03762"></textarea>
+          <div class="btn-row">
+            <button id="lookup-btn" class="btn btn-primary" type="button">Add</button>
+            <button id="demo-btn" class="btn btn-outline" type="button">Demo</button>
+          </div>
+        </section>
+
+        <!-- Seed Papers -->
+        <section id="seed-section" class="section hidden">
+          <span class="label">Seed papers</span>
+          <ul id="seed-list" class="seed-list"></ul>
+        </section>
+
+        <!-- Filters -->
+        <section class="section">
+          <span class="label">Filters</span>
+          <label class="toggle-row">
+            <input id="shared-only-toggle" type="checkbox" />
+            <span>Shared papers only</span>
+          </label>
+          <button id="enrich-years-btn" class="btn btn-outline btn-full hidden" type="button">
+            Resolve years
+          </button>
+        </section>
+
+        <!-- Collapsible Saved Graphs / History -->
+        <details class="collapsible-section">
+          <summary class="collapsible-summary">
+            <span class="label">History</span>
+            <span id="history-count" class="count-pill">0</span>
+          </summary>
+          <div class="collapsible-body">
+            <div class="row-between">
+              <span class="muted-hint">Recent graphs</span>
+              <button id="clear-history-btn" class="text-btn" type="button">Clear</button>
+            </div>
+            <ul id="history-list" class="history-list">
+              <li class="muted-empty">Empty</li>
+            </ul>
+          </div>
+        </details>
+      </aside>
+
+      <!-- Left Resize Handle -->
+      <div id="left-resizer" class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize library"></div>
+
+      <!-- Center Canvas Workspace -->
+      <main class="canvas-wrap">
+        <!-- Dedicated Graph Toolbar -->
+        <div class="graph-toolbar" role="toolbar" aria-label="Graph controls">
+          <select id="layout-select" class="toolbar-select" title="Graph layout">
+            <option value="cose">Clustered</option>
+            <option value="timeline">Timeline →</option>
+            <option value="breadthfirst">Hierarchy</option>
+            <option value="concentric">Concentric</option>
+          </select>
+
+          <select id="label-mode-select" class="toolbar-select" title="Label visibility">
+            <option value="auto">Labels: Auto</option>
+            <option value="compact">Labels: Compact</option>
+            <option value="full">Labels: Full</option>
+            <option value="hover">Labels: Hover</option>
+          </select>
+
+          <span class="toolbar-sep"></span>
+
+          <button id="cross-cite-btn" class="toolbar-btn hidden" type="button" title="Connect citations between references">Connect refs</button>
+          <button id="undo-btn" class="toolbar-btn" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
+          <button id="zoom-out-btn" class="toolbar-icon-btn" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+          <button id="zoom-in-btn" class="toolbar-icon-btn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+          <button id="fit-btn" class="toolbar-btn" type="button" title="Fit graph">Fit</button>
+          <button id="clear-btn" class="toolbar-btn toolbar-btn-danger" type="button" title="Clear graph">Clear</button>
+        </div>
+
+        <!-- Path Banner -->
+        <div id="path-banner" class="path-banner hidden">
+          <span id="path-banner-text"></span>
+          <button id="path-clear-btn" class="text-btn" type="button">Clear</button>
+        </div>
+
+        <!-- Status Toasts (floating bottom-right above legend) -->
+        <div id="status-area" class="status-toasts" aria-live="polite"></div>
+
+        <!-- Cytoscape Canvas -->
+        <div id="cy" class="cy-canvas"></div>
+        <div id="hover-tooltip" class="hover-tooltip hidden"></div>
+
+        <!-- Discover View Overlay (Top & Bridge Papers) -->
+        <section id="discover-panel" class="discover-panel hidden" aria-label="Discover papers">
+          <div class="discover-header">
+            <div>
+              <h2>Discover</h2>
+              <p class="discover-sub">Foundational and bridge papers in the current network.</p>
+            </div>
+            <div class="discover-controls">
+              <select id="discover-sort-select" class="control control-sm">
+                <option value="foundational">Sort: Foundational</option>
+                <option value="local">Sort: Most shared</option>
+                <option value="global">Sort: Most cited</option>
+                <option value="newest">Sort: Newest</option>
+              </select>
+              <button id="discover-close-btn" class="btn btn-outline btn-sm" type="button">Back to Graph</button>
+            </div>
+          </div>
+          <div id="discover-empty" class="discover-empty">Load one or more papers to discover key references.</div>
+          <div id="discover-list" class="discover-grid"></div>
+        </section>
+
+        <div id="empty-state" class="empty-state">
+          <div class="empty-card">
+            <h2>Citation Graph</h2>
+            <p>Drop a PDF or enter a DOI / arXiv ID in the Library.</p>
           </div>
         </div>
 
-        <label class="toggle-row">
-          <input id="shared-only-toggle" type="checkbox" />
-          <span>Shared only</span>
-        </label>
-
-        <input id="search-input" class="control" type="search" placeholder="Search..." />
-
-        <button id="cross-cite-btn" class="btn btn-outline btn-full hidden" type="button">
-          Connect refs
-        </button>
-
-        <button id="enrich-years-btn" class="btn btn-outline btn-full hidden" type="button">
-          Resolve years
-        </button>
-
-        <div class="btn-grid">
-          <button id="undo-btn" class="btn btn-outline" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
-          <button id="fit-btn" class="btn btn-outline" type="button">Fit</button>
-          <button id="export-btn" class="btn btn-outline" type="button">Export</button>
-          <button id="clear-btn" class="btn btn-ghost-danger" type="button">Clear</button>
+        <div id="loading-overlay" class="loading-overlay hidden">
+          <div class="spinner"></div>
+          <span id="loading-text">Loading</span>
         </div>
-      </section>
 
-      <!-- Status -->
-      <div id="status-area" class="status-area" aria-live="polite"></div>
-
-      <!-- Top Foundational Papers -->
-      <section id="top-papers-section" class="section top-section hidden">
-        <span class="label">Top papers</span>
-        <ol id="top-papers-list" class="top-list"></ol>
-      </section>
-
-      <!-- History -->
-      <section class="section history-section">
-        <div class="row-between">
-          <span class="label">History</span>
-          <button id="clear-history-btn" class="text-btn" type="button">Clear</button>
+        <div class="legend" aria-label="Legend">
+          <span class="legend-item"><i class="dot dot-seed"></i>Source</span>
+          <span class="legend-item"><i class="dot dot-shared"></i>Shared</span>
+          <span class="legend-item"><i class="dot dot-cited"></i>Cited</span>
         </div>
-        <ul id="history-list" class="history-list">
-          <li class="muted-empty">Empty</li>
-        </ul>
-      </section>
-    </aside>
+      </main>
 
-    <!-- Canvas -->
-    <main class="canvas-wrap">
-      <div id="cy" class="cy-canvas"></div>
-      <div id="hover-tooltip" class="hover-tooltip hidden"></div>
+      <!-- Right Resize Handle -->
+      <div id="right-resizer" class="resizer hidden" role="separator" aria-orientation="vertical" aria-label="Resize inspector"></div>
 
-      <div id="path-banner" class="path-banner hidden">
-        <span id="path-banner-text"></span>
-        <button id="path-clear-btn" class="text-btn" type="button">Clear</button>
-      </div>
+      <!-- Right Inspector (340px default, collapsible & resizable) -->
+      <aside id="inspector" class="right-inspector hidden" aria-label="Paper inspector">
+        <header class="inspector-header">
+          <h2 id="insp-title">Select a paper</h2>
+          <button id="insp-close" class="icon-btn" type="button" title="Close (Esc)" aria-label="Close">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </header>
 
-      <div id="empty-state" class="empty-state">
-        <div class="empty-card">
-          <h2>Citation Graph</h2>
-          <p>Drop a PDF or enter a DOI / arXiv ID.</p>
+        <div id="insp-empty" class="insp-empty">Click any node in the graph to inspect its details and connections.</div>
+
+        <div id="insp-content" class="insp-content hidden">
+          <div id="insp-badges" class="badge-row"></div>
+
+          <dl class="meta-grid">
+            <div><dt>Year</dt><dd id="insp-year">—</dd></div>
+            <div><dt>Citations</dt><dd id="insp-global-cites">—</dd></div>
+            <div class="full"><dt>Venue</dt><dd id="insp-venue">—</dd></div>
+            <div class="full"><dt>Authors</dt><dd id="insp-authors">—</dd></div>
+          </dl>
+
+          <div id="insp-links" class="link-row"></div>
+
+          <div class="inspector-actions">
+            <button id="expand-btn" class="btn btn-primary btn-full" type="button">← Older</button>
+            <button id="expand-cited-by-btn" class="btn btn-outline btn-full" type="button">→ Newer</button>
+            <button id="new-graph-btn" class="btn btn-outline btn-full" type="button">New graph</button>
+            <button id="path-btn" class="btn btn-outline btn-full" type="button">Path</button>
+          </div>
+
+          <div id="insp-cited-by-section" class="insp-block hidden">
+            <span class="label">Cited by</span>
+            <ul id="insp-cited-by" class="paper-list"></ul>
+          </div>
+
+          <div id="insp-raw-section" class="insp-block hidden">
+            <span class="label">Reference</span>
+            <p id="insp-raw" class="raw-box"></p>
+          </div>
         </div>
+      </aside>
+    </div>
+
+    <!-- Bottom Status Bar -->
+    <footer class="status-bar" aria-label="Status bar">
+      <div class="status-metrics">
+        <span><strong id="stat-seeds">0</strong> seeds</span>
+        <span class="sep">·</span>
+        <span><strong id="stat-nodes">0</strong> papers</span>
+        <span class="sep">·</span>
+        <span><strong id="stat-shared">0</strong> shared</span>
+        <span class="sep">·</span>
+        <span><strong id="stat-edges">0</strong> citations</span>
       </div>
-
-      <div id="loading-overlay" class="loading-overlay hidden">
-        <div class="spinner"></div>
-        <span id="loading-text">Loading</span>
-      </div>
-
-      <div class="legend" aria-label="Legend">
-        <span class="legend-item"><i class="dot dot-seed"></i>Source</span>
-        <span class="legend-item"><i class="dot dot-shared"></i>Shared</span>
-        <span class="legend-item"><i class="dot dot-cited"></i>Cited</span>
-      </div>
-    </main>
-
-    <!-- Inspector -->
-    <aside id="inspector" class="inspector hidden" aria-label="Paper details">
-      <header class="inspector-header">
-        <h2 id="insp-title">Title</h2>
-        <button id="insp-close" class="icon-btn" type="button" aria-label="Close">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </header>
-
-      <div id="insp-badges" class="badge-row"></div>
-
-      <dl class="meta-grid">
-        <div><dt>Year</dt><dd id="insp-year">—</dd></div>
-        <div><dt>Citations</dt><dd id="insp-global-cites">—</dd></div>
-        <div class="full"><dt>Venue</dt><dd id="insp-venue">—</dd></div>
-        <div class="full"><dt>Authors</dt><dd id="insp-authors">—</dd></div>
-      </dl>
-
-      <div id="insp-links" class="link-row"></div>
-
-      <div class="inspector-actions">
-        <button id="expand-btn" class="btn btn-primary btn-full" type="button">← Older</button>
-        <button id="expand-cited-by-btn" class="btn btn-outline btn-full" type="button">→ Newer</button>
-        <button id="new-graph-btn" class="btn btn-outline btn-full" type="button">New graph</button>
-        <button id="path-btn" class="btn btn-outline btn-full" type="button">Path</button>
-      </div>
-
-      <div id="insp-cited-by-section" class="insp-block hidden">
-        <span class="label">Cited by</span>
-        <ul id="insp-cited-by" class="paper-list"></ul>
-      </div>
-
-      <div id="insp-raw-section" class="insp-block hidden">
-        <span class="label">Reference</span>
-        <p id="insp-raw" class="raw-box"></p>
-      </div>
-    </aside>
+      <div id="status-bar-msg" class="status-msg">Ready</div>
+    </footer>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

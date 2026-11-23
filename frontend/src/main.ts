@@ -12,6 +12,14 @@ import { formatCompactLabel, formatFullLabel, GraphStore } from "./store";
 import type { LabelMode, LayoutMode, PaperNode, ThemeMode } from "./types";
 
 const THEME_KEY = "citation-graph:theme";
+const PANEL_LAYOUT_KEY = "citation-graph:panel-layout";
+
+interface PanelLayoutState {
+  leftWidth: number;
+  rightWidth: number;
+  leftOpen: boolean;
+  rightOpen: boolean;
+}
 
 const SUN_SVG = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`;
 const MOON_SVG = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
@@ -22,43 +30,64 @@ function byId<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
+// Top nav & layout elements
+const toggleLeftBtn = byId<HTMLButtonElement>("toggle-left-btn");
+const toggleRightBtn = byId<HTMLButtonElement>("toggle-right-btn");
+const tabWorkspaceBtn = byId<HTMLButtonElement>("tab-workspace-btn");
+const tabDiscoverBtn = byId<HTMLButtonElement>("tab-discover-btn");
 const themeToggle = byId<HTMLButtonElement>("theme-toggle");
+const exportBtn = byId<HTMLButtonElement>("export-btn");
+const searchInput = byId<HTMLInputElement>("search-input");
+
+const leftSidebar = byId<HTMLElement>("left-sidebar");
+const leftResizer = byId<HTMLDivElement>("left-resizer");
+const rightResizer = byId<HTMLDivElement>("right-resizer");
+const inspector = byId<HTMLElement>("inspector");
+
+// Left sidebar controls
 const dropzone = byId<HTMLDivElement>("dropzone");
 const pdfInput = byId<HTMLInputElement>("pdf-input");
 const idInput = byId<HTMLTextAreaElement>("id-input");
 const lookupBtn = byId<HTMLButtonElement>("lookup-btn");
 const demoBtn = byId<HTMLButtonElement>("demo-btn");
+const seedSection = byId<HTMLElement>("seed-section");
+const seedList = byId<HTMLUListElement>("seed-list");
+const sharedOnlyToggle = byId<HTMLInputElement>("shared-only-toggle");
+const enrichYearsBtn = byId<HTMLButtonElement>("enrich-years-btn");
+const historyList = byId<HTMLUListElement>("history-list");
+const historyCount = byId<HTMLSpanElement>("history-count");
+const clearHistoryBtn = byId<HTMLButtonElement>("clear-history-btn");
+
+// Graph toolbar & canvas overlays
 const layoutSelect = byId<HTMLSelectElement>("layout-select");
 const labelModeSelect = byId<HTMLSelectElement>("label-mode-select");
-const sharedOnlyToggle = byId<HTMLInputElement>("shared-only-toggle");
-const searchInput = byId<HTMLInputElement>("search-input");
 const crossCiteBtn = byId<HTMLButtonElement>("cross-cite-btn");
-const enrichYearsBtn = byId<HTMLButtonElement>("enrich-years-btn");
 const undoBtn = byId<HTMLButtonElement>("undo-btn");
+const zoomOutBtn = byId<HTMLButtonElement>("zoom-out-btn");
+const zoomInBtn = byId<HTMLButtonElement>("zoom-in-btn");
 const fitBtn = byId<HTMLButtonElement>("fit-btn");
-const exportBtn = byId<HTMLButtonElement>("export-btn");
 const clearBtn = byId<HTMLButtonElement>("clear-btn");
+const pathBanner = byId<HTMLDivElement>("path-banner");
+const pathBannerText = byId<HTMLSpanElement>("path-banner-text");
+const pathClearBtn = byId<HTMLButtonElement>("path-clear-btn");
 const statusArea = byId<HTMLDivElement>("status-area");
-const topPapersSection = byId<HTMLElement>("top-papers-section");
-const topPapersList = byId<HTMLOListElement>("top-papers-list");
-const historyList = byId<HTMLUListElement>("history-list");
-const clearHistoryBtn = byId<HTMLButtonElement>("clear-history-btn");
 const emptyState = byId<HTMLDivElement>("empty-state");
 const loadingOverlay = byId<HTMLDivElement>("loading-overlay");
 const loadingText = byId<HTMLSpanElement>("loading-text");
 const hoverTooltip = byId<HTMLDivElement>("hover-tooltip");
-const pathBanner = byId<HTMLDivElement>("path-banner");
-const pathBannerText = byId<HTMLSpanElement>("path-banner-text");
-const pathClearBtn = byId<HTMLButtonElement>("path-clear-btn");
 
-const statSeeds = byId<HTMLElement>("stat-seeds");
-const statNodes = byId<HTMLElement>("stat-nodes");
-const statShared = byId<HTMLElement>("stat-shared");
-const statEdges = byId<HTMLElement>("stat-edges");
+// Discover view
+const discoverPanel = byId<HTMLElement>("discover-panel");
+const discoverSortSelect = byId<HTMLSelectElement>("discover-sort-select");
+const discoverCloseBtn = byId<HTMLButtonElement>("discover-close-btn");
+const discoverEmpty = byId<HTMLDivElement>("discover-empty");
+const discoverList = byId<HTMLDivElement>("discover-list");
 
-const inspector = byId<HTMLElement>("inspector");
+// Inspector elements
 const inspClose = byId<HTMLButtonElement>("insp-close");
 const inspTitle = byId<HTMLHeadingElement>("insp-title");
+const inspEmpty = byId<HTMLDivElement>("insp-empty");
+const inspContent = byId<HTMLDivElement>("insp-content");
 const inspBadges = byId<HTMLDivElement>("insp-badges");
 const inspYear = byId<HTMLElement>("insp-year");
 const inspVenue = byId<HTMLElement>("insp-venue");
@@ -74,9 +103,20 @@ const inspCitedBy = byId<HTMLUListElement>("insp-cited-by");
 const inspRawSection = byId<HTMLDivElement>("insp-raw-section");
 const inspRaw = byId<HTMLParagraphElement>("insp-raw");
 
+// Bottom status bar
+const statSeeds = byId<HTMLElement>("stat-seeds");
+const statNodes = byId<HTMLElement>("stat-nodes");
+const statShared = byId<HTMLElement>("stat-shared");
+const statEdges = byId<HTMLElement>("stat-edges");
+const statusBarMsg = byId<HTMLDivElement>("status-bar-msg");
+
 const store = new GraphStore();
 let pathStartId: string | null = null;
 let pathActive = false;
+let discoverOpen = false;
+let toastTimer: number | null = null;
+
+const panelState: PanelLayoutState = loadPanelLayout();
 
 const graphView = new CitationGraphView(byId<HTMLDivElement>("cy"), store, {
   onSelectNode: (nodeId) => handleNodeSelected(nodeId),
@@ -87,18 +127,203 @@ const graphView = new CitationGraphView(byId<HTMLDivElement>("cy"), store, {
   onUnhoverNode: () => hideTooltip(),
 });
 
+// Panel Layout Persistence & Resizing
+function loadPanelLayout(): PanelLayoutState {
+  const defaults: PanelLayoutState = {
+    leftWidth: 260,
+    rightWidth: 340,
+    leftOpen: true,
+    rightOpen: false,
+  };
+  try {
+    const raw = localStorage.getItem(PANEL_LAYOUT_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as Partial<PanelLayoutState>;
+    return {
+      leftWidth: clamp(parsed.leftWidth ?? defaults.leftWidth, 200, 420),
+      rightWidth: clamp(parsed.rightWidth ?? defaults.rightWidth, 260, 520),
+      leftOpen: parsed.leftOpen ?? defaults.leftOpen,
+      rightOpen: false, // Start closed until a paper is selected
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function savePanelLayout(): void {
+  try {
+    localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(panelState));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
+
+function applyPanelLayout(): void {
+  leftSidebar.style.width = `${panelState.leftWidth}px`;
+  leftSidebar.classList.toggle("hidden", !panelState.leftOpen);
+  leftResizer.classList.toggle("hidden", !panelState.leftOpen);
+  toggleLeftBtn.classList.toggle("active", panelState.leftOpen);
+
+  inspector.style.width = `${panelState.rightWidth}px`;
+  inspector.classList.toggle("hidden", !panelState.rightOpen);
+  rightResizer.classList.toggle("hidden", !panelState.rightOpen);
+  toggleRightBtn.classList.toggle("active", panelState.rightOpen);
+
+  savePanelLayout();
+  requestAnimationFrame(() => graphView.cy.resize());
+}
+
+function wireResizer(
+  handle: HTMLElement,
+  side: "left" | "right"
+): void {
+  handle.addEventListener("mousedown", (startEvent) => {
+    startEvent.preventDefault();
+    handle.classList.add("dragging");
+    const startX = startEvent.clientX;
+    const startWidth = side === "left" ? panelState.leftWidth : panelState.rightWidth;
+
+    const onMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX;
+      if (side === "left") {
+        panelState.leftWidth = clamp(startWidth + delta, 200, 420);
+        leftSidebar.style.width = `${panelState.leftWidth}px`;
+      } else {
+        panelState.rightWidth = clamp(startWidth - delta, 260, 520);
+        inspector.style.width = `${panelState.rightWidth}px`;
+      }
+      graphView.cy.resize();
+    };
+
+    const onUp = () => {
+      handle.classList.remove("dragging");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      savePanelLayout();
+      graphView.cy.resize();
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
+}
+
+wireResizer(leftResizer, "left");
+wireResizer(rightResizer, "right");
+
+// Discover view
+function setDiscoverOpen(open: boolean): void {
+  discoverOpen = open;
+  discoverPanel.classList.toggle("hidden", !open);
+  tabWorkspaceBtn.classList.toggle("active", !open);
+  tabDiscoverBtn.classList.toggle("active", open);
+  if (open) renderDiscover();
+  else requestAnimationFrame(() => graphView.cy.resize());
+}
+
+function formatCompactCount(n: number | null): string {
+  if (n === null) return "";
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function renderDiscover(): void {
+  const mode = discoverSortSelect.value;
+  const inDeg = store.computeInDegrees();
+  const candidates = Array.from(store.nodes.values())
+    .filter((n) => !n.is_seed)
+    .map((node) => {
+      const localCites = inDeg.get(node.id) ?? 0;
+      const globalScore = Math.log10((node.cited_by_count ?? 0) + 1);
+      return { node, localCites, score: localCites * 3 + globalScore };
+    });
+
+  candidates.sort((a, b) => {
+    if (mode === "local") {
+      if (b.localCites !== a.localCites) return b.localCites - a.localCites;
+      return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
+    }
+    if (mode === "global") {
+      return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
+    }
+    if (mode === "newest") {
+      return (b.node.year ?? 0) - (a.node.year ?? 0);
+    }
+    if (b.score !== a.score) return b.score - a.score;
+    return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
+  });
+
+  discoverList.innerHTML = "";
+  discoverEmpty.classList.toggle("hidden", candidates.length > 0);
+
+  candidates.slice(0, 30).forEach((entry, idx) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "discover-card";
+    card.addEventListener("click", () => {
+      setDiscoverOpen(false);
+      graphView.focusNode(entry.node.id);
+      openInspector(entry.node.id);
+    });
+
+    const top = document.createElement("div");
+    top.className = "discover-card-top";
+    const metaParts: string[] = [`#${idx + 1}`];
+    if (entry.localCites > 0) metaParts.push(`${entry.localCites} local`);
+    const gStr = formatCompactCount(entry.node.cited_by_count);
+    if (gStr) metaParts.push(`${gStr} cites`);
+    const leftMeta = document.createElement("span");
+    leftMeta.textContent = metaParts.join(" · ");
+    const rightMeta = document.createElement("span");
+    rightMeta.textContent = entry.node.year ? String(entry.node.year) : "—";
+    top.appendChild(leftMeta);
+    top.appendChild(rightMeta);
+
+    const title = document.createElement("div");
+    title.className = "discover-card-title";
+    title.textContent = entry.node.title;
+
+    const authors = document.createElement("div");
+    authors.className = "discover-card-authors";
+    authors.textContent =
+      entry.node.authors.length > 0
+        ? entry.node.authors.slice(0, 4).join(", ")
+        : entry.node.venue ?? "";
+
+    card.appendChild(top);
+    card.appendChild(title);
+    if (authors.textContent) card.appendChild(authors);
+    discoverList.appendChild(card);
+  });
+}
+
+// Loading & Status
 function setLoading(isLoading: boolean, text = "Loading"): void {
   loadingText.textContent = text;
   loadingOverlay.classList.toggle("hidden", !isLoading);
+  statusBarMsg.textContent = isLoading ? text : "Ready";
 }
 
 function showMessages(messages: string[], isError = false): void {
   statusArea.innerHTML = "";
+  if (toastTimer !== null) window.clearTimeout(toastTimer);
+  if (messages.length === 0) return;
+
+  statusBarMsg.textContent = messages[0];
   for (const msg of messages) {
     const div = document.createElement("div");
     div.className = isError ? "toast error" : "toast";
     div.textContent = msg;
     statusArea.appendChild(div);
+  }
+  if (!isError) {
+    toastTimer = window.setTimeout(() => {
+      statusArea.innerHTML = "";
+    }, 6500);
   }
 }
 
@@ -114,14 +339,20 @@ function applyTheme(theme: ThemeMode): void {
   graphView.applyTheme(theme);
 }
 
-function updateStats(): void {
+function updateStatsAndSeeds(): void {
   const inDeg = store.computeInDegrees();
   let seeds = 0;
   let shared = 0;
   let unknownYears = 0;
+  const seedNodes: PaperNode[] = [];
+
   for (const [id, node] of store.nodes.entries()) {
-    if (node.is_seed) seeds += 1;
-    else if ((inDeg.get(id) ?? 0) >= 2) shared += 1;
+    if (node.is_seed) {
+      seeds += 1;
+      seedNodes.push(node);
+    } else if ((inDeg.get(id) ?? 0) >= 2) {
+      shared += 1;
+    }
     if (!node.year) unknownYears += 1;
   }
 
@@ -138,62 +369,44 @@ function updateStats(): void {
   }
 
   crossCiteBtn.classList.toggle("hidden", store.nodes.size < 3);
-}
 
-function formatCompactCount(n: number | null): string {
-  if (n === null) return "";
-  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
-  return String(n);
-}
-
-function renderTopPapers(): void {
-  const ranked = store.getTopFoundational(5);
-  topPapersList.innerHTML = "";
-  if (ranked.length === 0) {
-    topPapersSection.classList.add("hidden");
-    return;
-  }
-
-  topPapersSection.classList.remove("hidden");
-  ranked.forEach((entry, idx) => {
+  // Render Seed Papers list
+  seedList.innerHTML = "";
+  seedSection.classList.toggle("hidden", seedNodes.length === 0);
+  for (const seed of seedNodes) {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "top-item-btn";
-    btn.title = entry.node.title;
+    btn.className = "seed-item-btn";
+    btn.title = seed.title;
     btn.addEventListener("click", () => {
-      graphView.focusNode(entry.node.id);
-      openInspector(entry.node.id);
+      setDiscoverOpen(false);
+      graphView.focusNode(seed.id);
+      openInspector(seed.id);
     });
 
-    const rank = document.createElement("span");
-    rank.className = "top-rank";
-    rank.textContent = String(idx + 1);
-
-    const body = document.createElement("span");
-    body.className = "top-body";
-
     const title = document.createElement("span");
-    title.className = "top-title";
-    title.textContent = entry.node.title;
-
-    const parts: string[] = [];
-    if (entry.localCites > 0) parts.push(`${entry.localCites} local`);
-    const globalStr = formatCompactCount(entry.node.cited_by_count);
-    if (globalStr) parts.push(`${globalStr} global`);
-    if (entry.node.year) parts.push(String(entry.node.year));
+    title.className = "seed-title";
+    title.textContent = seed.title;
 
     const meta = document.createElement("span");
-    meta.className = "top-meta";
-    meta.textContent = parts.join(" · ");
+    meta.className = "seed-meta";
+    meta.textContent = [seed.year, seed.id === store.primarySeedId ? "Primary" : "Seed"]
+      .filter(Boolean)
+      .join(" · ");
 
-    body.appendChild(title);
-    body.appendChild(meta);
-    btn.appendChild(rank);
-    btn.appendChild(body);
+    btn.appendChild(title);
+    btn.appendChild(meta);
     li.appendChild(btn);
-    topPapersList.appendChild(li);
-  });
+    seedList.appendChild(li);
+  }
+}
+
+function updateUndoButton(): void {
+  const count = store.undoStack.length;
+  undoBtn.disabled = count === 0;
+  undoBtn.title =
+    count > 0 ? `Undo: ${store.undoStack[count - 1].label} (Ctrl+Z)` : "Nothing to undo";
 }
 
 function clearPathMode(): void {
@@ -240,25 +453,18 @@ function handleNodeSelected(nodeId: string): void {
   openInspector(nodeId);
 }
 
-function updateUndoButton(): void {
-  const count = store.undoStack.length;
-  undoBtn.disabled = count === 0;
-  undoBtn.title =
-    count > 0 ? `Undo: ${store.undoStack[count - 1].label} (Ctrl+Z)` : "Nothing to undo";
-}
-
 function renderAll(): void {
   clearPathMode();
   graphView.render(sharedOnlyToggle.checked, searchInput.value);
-  updateStats();
-  renderTopPapers();
+  updateStatsAndSeeds();
   updateUndoButton();
+  if (discoverOpen) renderDiscover();
   emptyState.classList.toggle("hidden", store.nodes.size > 0);
 
   if (store.selectedId && store.nodes.has(store.selectedId)) {
     openInspector(store.selectedId);
-  } else {
-    closeInspector();
+  } else if (panelState.rightOpen) {
+    renderEmptyInspector();
   }
 }
 
@@ -300,6 +506,12 @@ function hideTooltip(): void {
   hoverTooltip.classList.add("hidden");
 }
 
+function renderEmptyInspector(): void {
+  inspTitle.textContent = "Paper Inspector";
+  inspEmpty.classList.remove("hidden");
+  inspContent.classList.add("hidden");
+}
+
 function openInspector(nodeId: string): void {
   const node = store.nodes.get(nodeId);
   if (!node) return;
@@ -307,6 +519,9 @@ function openInspector(nodeId: string): void {
 
   const inDeg = store.computeInDegrees().get(nodeId) ?? 0;
   inspTitle.textContent = node.title || "Untitled";
+  inspEmpty.classList.add("hidden");
+  inspContent.classList.remove("hidden");
+
   inspYear.textContent = node.year ? String(node.year) : "—";
   inspVenue.textContent = node.venue ?? "—";
   inspAuthors.textContent = node.authors.length ? node.authors.join(", ") : "—";
@@ -380,12 +595,18 @@ function openInspector(nodeId: string): void {
     inspRawSection.classList.add("hidden");
   }
 
-  inspector.classList.remove("hidden");
+  if (!panelState.rightOpen) {
+    panelState.rightOpen = true;
+    applyPanelLayout();
+  }
 }
 
 function closeInspector(): void {
   store.selectedId = null;
-  inspector.classList.add("hidden");
+  if (panelState.rightOpen) {
+    panelState.rightOpen = false;
+    applyPanelLayout();
+  }
 }
 
 function formatTimeAgo(ts: number): string {
@@ -400,6 +621,7 @@ function formatTimeAgo(ts: number): string {
 
 function renderHistory(): void {
   const items = store.readHistory();
+  historyCount.textContent = String(items.length);
   historyList.innerHTML = "";
   if (items.length === 0) {
     const li = document.createElement("li");
@@ -423,6 +645,7 @@ function renderHistory(): void {
         layoutSelect.value = restoredLayout;
         graphView.setLayoutMode(restoredLayout);
       }
+      setDiscoverOpen(false);
       hideTooltip();
       showMessages([]);
       renderAll();
@@ -457,6 +680,7 @@ function renderHistory(): void {
   }
 }
 
+// API Handlers
 async function handlePdfUpload(fileList: FileList): Promise<void> {
   const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
   if (files.length === 0) {
@@ -464,6 +688,7 @@ async function handlePdfUpload(fileList: FileList): Promise<void> {
     return;
   }
 
+  setDiscoverOpen(false);
   setLoading(true, `Parsing ${files.length} PDF(s)...`);
   showMessages([]);
   try {
@@ -491,6 +716,7 @@ async function handleLookup(rawText: string): Promise<void> {
     return;
   }
 
+  setDiscoverOpen(false);
   setLoading(true, `Fetching ${ids.length} paper(s)...`);
   showMessages([]);
   try {
@@ -514,6 +740,7 @@ async function handleExpandOlder(): Promise<void> {
 
   expandBtn.disabled = true;
   expandBtn.textContent = "Loading...";
+  statusBarMsg.textContent = "Expanding references...";
   showMessages([]);
   try {
     const data = await apiExpandReferences(node);
@@ -527,6 +754,7 @@ async function handleExpandOlder(): Promise<void> {
     } else {
       openInspector(node.id);
     }
+    statusBarMsg.textContent = "Ready";
     if (data.warnings.length) showMessages(data.warnings);
   } catch (err) {
     showMessages([err instanceof Error ? err.message : "Expansion failed."], true);
@@ -542,6 +770,7 @@ async function handleExpandNewer(): Promise<void> {
 
   expandCitedByBtn.disabled = true;
   expandCitedByBtn.textContent = "Loading...";
+  statusBarMsg.textContent = "Fetching forward citations...";
   showMessages([]);
   try {
     const data = await apiExpandCitedBy(node, 30);
@@ -555,6 +784,7 @@ async function handleExpandNewer(): Promise<void> {
     } else {
       openInspector(node.id);
     }
+    statusBarMsg.textContent = "Ready";
     if (data.warnings.length) showMessages(data.warnings);
   } catch (err) {
     showMessages([err instanceof Error ? err.message : "Forward lookup failed."], true);
@@ -568,7 +798,6 @@ async function handleNewGraphFromNode(): Promise<void> {
   const node = store.nodes.get(store.selectedId);
   if (!node) return;
 
-  // Preserve current graph in history before starting fresh
   store.saveHistory(layoutSelect.value as LayoutMode);
   setLoading(true, `Building graph for "${formatCompactLabel(node)}"...`);
   showMessages([]);
@@ -681,6 +910,24 @@ function handleUndo(): void {
 }
 
 // Event listeners
+toggleLeftBtn.addEventListener("click", () => {
+  panelState.leftOpen = !panelState.leftOpen;
+  applyPanelLayout();
+});
+
+toggleRightBtn.addEventListener("click", () => {
+  panelState.rightOpen = !panelState.rightOpen;
+  if (panelState.rightOpen && !store.selectedId) {
+    renderEmptyInspector();
+  }
+  applyPanelLayout();
+});
+
+tabWorkspaceBtn.addEventListener("click", () => setDiscoverOpen(false));
+tabDiscoverBtn.addEventListener("click", () => setDiscoverOpen(true));
+discoverCloseBtn.addEventListener("click", () => setDiscoverOpen(false));
+discoverSortSelect.addEventListener("change", () => renderDiscover());
+
 themeToggle.addEventListener("click", () => {
   const next: ThemeMode = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   applyTheme(next);
@@ -727,6 +974,18 @@ pathClearBtn.addEventListener("click", () => clearPathMode());
 undoBtn.addEventListener("click", () => handleUndo());
 fitBtn.addEventListener("click", () => graphView.fit());
 
+zoomInBtn.addEventListener("click", () => {
+  const cy = graphView.cy;
+  const center = { x: cy.width() / 2, y: cy.height() / 2 };
+  cy.zoom({ level: Math.min(5, cy.zoom() * 1.3), renderedPosition: center });
+});
+
+zoomOutBtn.addEventListener("click", () => {
+  const cy = graphView.cy;
+  const center = { x: cy.width() / 2, y: cy.height() / 2 };
+  cy.zoom({ level: Math.max(0.1, cy.zoom() / 1.3), renderedPosition: center });
+});
+
 exportBtn.addEventListener("click", () => {
   const blob = new Blob([JSON.stringify(store.toExportJson(), null, 2)], {
     type: "application/json",
@@ -743,6 +1002,7 @@ clearBtn.addEventListener("click", () => {
   store.clear();
   hideTooltip();
   showMessages([]);
+  closeInspector();
   renderAll();
   renderHistory();
 });
@@ -762,6 +1022,21 @@ newGraphBtn.addEventListener("click", () => void handleNewGraphFromNode());
 pathBtn.addEventListener("click", () => startPathFromSelected());
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (pathStartId || pathActive) {
+      clearPathMode();
+      return;
+    }
+    if (discoverOpen) {
+      setDiscoverOpen(false);
+      return;
+    }
+    if (panelState.rightOpen) {
+      graphView.cy.elements().unselect();
+      closeInspector();
+      return;
+    }
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
     const tag = (document.activeElement?.tagName ?? "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
@@ -772,7 +1047,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-// Init theme & history
+// Init theme, panels, and history
 let initialTheme: ThemeMode = "light";
 try {
   const saved = localStorage.getItem(THEME_KEY);
@@ -785,5 +1060,6 @@ try {
   // Ignore storage errors
 }
 applyTheme(initialTheme);
+applyPanelLayout();
 renderHistory();
 updateUndoButton();
