@@ -14,6 +14,8 @@ export class CitationGraphView {
   private labelMode: LabelMode = "auto";
   private layoutMode: LayoutMode = "cose";
   private wasZoomedIn = false;
+  private dragLastPos: { x: number; y: number } | null = null;
+  private dragNeighbors: cytoscape.NodeCollection | null = null;
 
   constructor(
     container: HTMLElement,
@@ -271,6 +273,39 @@ export class CitationGraphView {
     this.cy.on("mouseout", "node.paper", () => {
       this.cy.elements().removeClass("dimmed highlighted hovered");
       callbacks.onUnhoverNode();
+    });
+
+    // Dragging a node also moves its connected neighbors (hold Shift to move single node only)
+    this.cy.on("grab", "node.paper", (evt) => {
+      const node = evt.target as NodeSingular;
+      const pos = node.position();
+      this.dragLastPos = { x: pos.x, y: pos.y };
+      // Exclude already-selected nodes since Cytoscape moves those natively
+      this.dragNeighbors = node.neighborhood("node.paper").filter((n) => !n.selected());
+    });
+
+    this.cy.on("drag", "node.paper", (evt) => {
+      if (!this.dragLastPos || !this.dragNeighbors) return;
+      const node = evt.target as NodeSingular;
+      const pos = node.position();
+      const dx = pos.x - this.dragLastPos.x;
+      const dy = pos.y - this.dragLastPos.y;
+      this.dragLastPos = { x: pos.x, y: pos.y };
+
+      const origEvt = evt.originalEvent as MouseEvent | undefined;
+      if (origEvt?.shiftKey || (dx === 0 && dy === 0)) return;
+
+      this.cy.batch(() => {
+        this.dragNeighbors!.forEach((neighbor) => {
+          const np = neighbor.position();
+          neighbor.position({ x: np.x + dx, y: np.y + dy });
+        });
+      });
+    });
+
+    this.cy.on("free", "node.paper", () => {
+      this.dragLastPos = null;
+      this.dragNeighbors = null;
     });
   }
 
