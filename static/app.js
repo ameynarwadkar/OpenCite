@@ -1,12 +1,20 @@
 (() => {
   // In-memory graph state
+  const THEME_KEY = "citation-graph:theme";
+  const HISTORY_KEY = "citation-graph:history";
+  const MAX_HISTORY_ITEMS = 15;
+
   const state = {
     nodes: new Map(), // id -> PaperNode
     edges: new Set(), // "source->target"
     selectedId: null,
+    activeHistoryId: null,
   };
 
   // DOM elements
+  const themeToggle = document.getElementById("theme-toggle");
+  const historyList = document.getElementById("history-list");
+  const clearHistoryBtn = document.getElementById("clear-history-btn");
   const dropzone = document.getElementById("dropzone");
   const pdfInput = document.getElementById("pdf-input");
   const idInput = document.getElementById("id-input");
@@ -799,6 +807,198 @@
     inspector.classList.add("hidden");
   }
 
+  // Theme (Light / Dark)
+  function applyTheme(theme) {
+    const isDark = theme === "dark";
+    document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    themeToggle.textContent = isDark ? "☀️" : "🌙";
+    themeToggle.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+    try {
+      localStorage.setItem(THEME_KEY, isDark ? "dark" : "light");
+    } catch (_) {}
+
+    cy.style()
+      .selector("node.paper")
+      .style({
+        color: isDark ? "#e2e8f0" : "#1e293b",
+        "text-background-color": isDark ? "#111827" : "#ffffff",
+        "text-border-color": isDark ? "#334155" : "#e2e8f0",
+        "border-color": isDark ? "#0b1120" : "#ffffff",
+      })
+      .selector("node.paper.seed")
+      .style({
+        color: isDark ? "#f8fafc" : "#0f172a",
+        "text-border-color": isDark ? "#6366f1" : "#c7d2fe",
+      })
+      .selector("node.paper:selected")
+      .style({
+        "border-color": isDark ? "#f8fafc" : "#0f172a",
+      })
+      .selector("node.year-header")
+      .style({
+        "background-color": isDark ? "#1e293b" : "#eef2ff",
+        "border-color": isDark ? "#4f46e5" : "#c7d2fe",
+        color: isDark ? "#c7d2fe" : "#3730a3",
+      })
+      .selector("edge")
+      .style({
+        "line-color": isDark ? "#334155" : "#cbd5e1",
+        "target-arrow-color": isDark ? "#475569" : "#94a3b8",
+      })
+      .selector("edge.highlighted")
+      .style({
+        "line-color": isDark ? "#818cf8" : "#4f46e5",
+        "target-arrow-color": isDark ? "#818cf8" : "#4f46e5",
+      })
+      .update();
+  }
+
+  // History (localStorage)
+  function readHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeHistory(items) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, MAX_HISTORY_ITEMS)));
+    } catch (_) {
+      // If quota exceeded, trim oldest entries and retry once
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, 5)));
+      } catch (_) {}
+    }
+  }
+
+  function buildHistoryTitle() {
+    const seeds = Array.from(state.nodes.values()).filter((n) => n.is_seed);
+    if (seeds.length === 0) return "Citation Graph";
+    const first = seeds[0].title || "Untitled Paper";
+    return seeds.length === 1 ? first : `${first} + ${seeds.length - 1} more`;
+  }
+
+  function saveCurrentToHistory() {
+    if (state.nodes.size === 0) return;
+    const items = readHistory();
+    const id = state.activeHistoryId || `h_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    state.activeHistoryId = id;
+
+    const entry = {
+      id,
+      title: buildHistoryTitle(),
+      savedAt: Date.now(),
+      nodeCount: state.nodes.size,
+      edgeCount: state.edges.size,
+      layout: layoutSelect.value,
+      nodes: Array.from(state.nodes.values()),
+      edges: Array.from(state.edges).map((k) => {
+        const [source, target] = k.split("->");
+        return { source, target };
+      }),
+    };
+
+    const filtered = items.filter((item) => item.id !== id);
+    filtered.unshift(entry);
+    writeHistory(filtered);
+    renderHistory();
+  }
+
+  function formatTimeAgo(ts) {
+    const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  function restoreHistoryItem(id) {
+    const item = readHistory().find((h) => h.id === id);
+    if (!item) return;
+
+    state.nodes.clear();
+    state.edges.clear();
+    state.selectedId = null;
+    state.activeHistoryId = item.id;
+    hideTooltip();
+    showMessages([]);
+
+    for (const node of item.nodes || []) {
+      state.nodes.set(node.id, { ...node });
+    }
+    for (const edge of item.edges || []) {
+      if (state.nodes.has(edge.source) && state.nodes.has(edge.target)) {
+        state.edges.add(`${edge.source}->${edge.target}`);
+      }
+    }
+    if (item.layout) {
+      layoutSelect.value = item.layout;
+    }
+    renderGraph();
+    renderHistory();
+  }
+
+  function deleteHistoryItem(id) {
+    const next = readHistory().filter((h) => h.id !== id);
+    if (state.activeHistoryId === id) state.activeHistoryId = null;
+    writeHistory(next);
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const items = readHistory();
+    historyList.innerHTML = "";
+    if (items.length === 0) {
+      const li = document.createElement("li");
+      li.className = "history-empty";
+      li.textContent = "No recent graphs yet.";
+      historyList.appendChild(li);
+      return;
+    }
+
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.className = "history-item" + (item.id === state.activeHistoryId ? " active" : "");
+
+      const loadBtn = document.createElement("button");
+      loadBtn.type = "button";
+      loadBtn.className = "history-load-btn";
+      loadBtn.title = item.title;
+      loadBtn.addEventListener("click", () => restoreHistoryItem(item.id));
+
+      const titleSpan = document.createElement("span");
+      titleSpan.className = "history-title";
+      titleSpan.textContent = item.title;
+
+      const metaSpan = document.createElement("span");
+      metaSpan.className = "history-meta";
+      metaSpan.textContent = `${item.nodeCount} papers · ${formatTimeAgo(item.savedAt)}`;
+
+      loadBtn.appendChild(titleSpan);
+      loadBtn.appendChild(metaSpan);
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "history-del-btn";
+      delBtn.title = "Remove from history";
+      delBtn.textContent = "✕";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteHistoryItem(item.id);
+      });
+
+      li.appendChild(loadBtn);
+      li.appendChild(delBtn);
+      historyList.appendChild(li);
+    }
+  }
+
   // API calls
   async function uploadPdfs(fileList) {
     const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
@@ -820,6 +1020,7 @@
         return;
       }
       mergeGraphPayload(data);
+      saveCurrentToHistory();
       if (data.warnings?.length) showMessages(data.warnings);
     } catch (err) {
       showMessages([`Network error: ${err.message}`], true);
@@ -853,6 +1054,7 @@
         return;
       }
       mergeGraphPayload(data);
+      saveCurrentToHistory();
       if (data.warnings?.length) showMessages(data.warnings);
     } catch (err) {
       showMessages([`Network error: ${err.message}`], true);
@@ -893,6 +1095,7 @@
       }
       if (data.nodes?.length) {
         mergeGraphPayload(data, node.id);
+        saveCurrentToHistory();
       } else {
         openInspector(node.id);
       }
@@ -905,6 +1108,16 @@
   }
 
   // Event wiring
+  themeToggle.addEventListener("click", () => {
+    const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    applyTheme(current === "dark" ? "light" : "dark");
+  });
+
+  clearHistoryBtn.addEventListener("click", () => {
+    state.activeHistoryId = null;
+    writeHistory([]);
+    renderHistory();
+  });
   dropzone.addEventListener("click", () => pdfInput.click());
   dropzone.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -962,9 +1175,11 @@
     state.nodes.clear();
     state.edges.clear();
     state.selectedId = null;
+    state.activeHistoryId = null;
     hideTooltip();
     showMessages([]);
     renderGraph();
+    renderHistory();
   });
 
   inspClose.addEventListener("click", () => {
@@ -1000,4 +1215,17 @@
     cy.elements().removeClass("dimmed highlighted hovered");
     hideTooltip();
   });
+
+  // Initialize saved theme and history on page load
+  let initialTheme = "light";
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "dark" || saved === "light") {
+      initialTheme = saved;
+    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      initialTheme = "dark";
+    }
+  } catch (_) {}
+  applyTheme(initialTheme);
+  renderHistory();
 })();

@@ -151,7 +151,11 @@ def test_serves_frontend_index_and_static_assets():
     assert index_resp.status_code == 200
     assert "Citation Graph" in index_resp.text
     assert 'value="timeline"' in index_resp.text
+    assert 'id="theme-toggle"' in index_resp.text
+    assert 'id="history-list"' in index_resp.text
 
     js_resp = client.get("/static/app.js")
     assert js_resp.status_code == 200
     assert "applyTimelineLayout" in js_resp.text
+    assert "applyTheme" in js_resp.text
+    assert "saveCurrentToHistory" in js_resp.text

@@ -12,7 +12,10 @@
     <!-- Left Sidebar -->
     <aside class="sidebar">
       <div class="brand">
-        <h1>Citation Graph</h1>
+        <div class="brand-row">
+          <h1>Citation Graph</h1>
+          <button id="theme-toggle" class="icon-btn theme-btn" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+        </div>
         <p class="subtitle">Minimal paper citation explorer</p>
       </div>
 
@@ -100,6 +103,17 @@
 
       <!-- Status / Warnings -->
       <div id="status-area" class="status-area" aria-live="polite"></div>
+
+      <!-- History -->
+      <section class="panel history-panel">
+        <div class="panel-header-row">
+          <span class="panel-label">History</span>
+          <button id="clear-history-btn" class="link-btn" type="button">Clear</button>
+        </div>
+        <ul id="history-list" class="history-list">
+          <li class="history-empty">No recent graphs yet.</li>
+        </ul>
+      </section>
     </aside>
 
     <!-- Main Graph Canvas -->
