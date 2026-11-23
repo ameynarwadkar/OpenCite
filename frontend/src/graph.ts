@@ -727,7 +727,7 @@ export class CitationGraphView {
       .run();
   }
 
-  applyLayout(randomize = false): void {
+  applyLayout(_randomize = false): void {
     const paperNodes = this.cy.nodes(".paper");
     if (paperNodes.length === 0) return;
 
@@ -771,7 +771,7 @@ export class CitationGraphView {
     const fcoseOptions = {
       name: "fcose",
       quality: "proof",
-      randomize,
+      randomize: true,
       animate: true,
       animationDuration: 460,
       fit: true,
