@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #fafafa;
   --surface: #ffffff;
   --surface-hover: #f4f4f5;
@@ -19,6 +20,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: #09090b;
   --surface: #111113;
   --surface-hover: #18181b;
@@ -292,6 +294,28 @@ textarea,
   width: auto;
   padding: 5px 8px;
   font-size: 12px;
+}
+
+select.control,
+select.toolbar-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] select.control,
+[data-theme="dark"] select.toolbar-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+select.control option,
+select.toolbar-select option {
+  background-color: var(--surface);
+  color: var(--text);
 }
 
 textarea {
@@ -591,27 +615,23 @@ textarea:focus,
 }
 
 .toolbar-select {
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 7px;
+  padding: 5px 26px 5px 9px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
-  background: transparent;
+  background-color: var(--surface);
   cursor: pointer;
   outline: none;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .toolbar-select:hover,
 .toolbar-select:focus {
-  background: var(--surface-hover);
-  border-color: var(--border);
-}
-
-.toolbar-select option {
-  background: var(--surface);
-  color: var(--text);
+  background-color: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
 .toolbar-sep {
