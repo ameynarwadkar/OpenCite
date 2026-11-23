@@ -22,7 +22,7 @@ CROSSREF_API = "https://api.crossref.org/works"
 ARXIV_API = "https://export.arxiv.org/api/query"
 USER_AGENT = "citation-graph/0.1 (mailto:citation-graph@local.dev)"
 WORK_SELECT_FIELDS = (
-    "id,doi,ids,title,publication_year,cited_by_count,authorships,primary_location,referenced_works"
+    "id,doi,ids,title,publication_year,cited_by_count,abstract_inverted_index,topics,authorships,primary_location,referenced_works"
 )
 MAX_REFERENCES_PER_PAPER = 200
 BATCH_SIZE = 50
@@ -66,6 +66,23 @@ def _extract_arxiv_from_work(work: dict) -> str | None:
     return None
 
 
+def reconstruct_abstract(inverted_index: dict | None) -> str | None:
+    """Reconstruct plain-text abstract from OpenAlex's abstract_inverted_index."""
+    if not isinstance(inverted_index, dict) or not inverted_index:
+        return None
+    positions: dict[int, str] = {}
+    for word, indices in inverted_index.items():
+        if not isinstance(indices, list):
+            continue
+        for idx in indices:
+            if isinstance(idx, int):
+                positions[idx] = str(word)
+    if not positions:
+        return None
+    text = " ".join(positions[i] for i in sorted(positions.keys())).strip()
+    return text or None
+
+
 def openalex_work_to_node(
     work: dict, *, is_seed: bool = False, is_expanded: bool = False
 ) -> PaperNode:
@@ -107,6 +124,16 @@ def openalex_work_to_node(
     if not isinstance(cited_by_count, int):
         cited_by_count = None
 
+    abstract = reconstruct_abstract(work.get("abstract_inverted_index"))
+    topics: list[str] = []
+    for t in work.get("topics") or []:
+        if isinstance(t, dict) and t.get("display_name"):
+            name = str(t["display_name"]).strip()
+            if name and name not in topics:
+                topics.append(name)
+        if len(topics) >= 4:
+            break
+
     return PaperNode(
         id=canonical_id,
         title=title,
@@ -117,6 +144,8 @@ def openalex_work_to_node(
         arxiv_id=arxiv_id,
         openalex_id=oa_id,
         url=url,
+        abstract=abstract,
+        topics=topics,
         cited_by_count=cited_by_count,
         is_seed=is_seed,
         is_expanded=is_expanded,

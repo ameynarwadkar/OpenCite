@@ -232,6 +232,8 @@ class GraphBuilder:
                 existing.openalex_id or normalized.openalex_id,
             ),
             raw_citation=existing.raw_citation or normalized.raw_citation,
+            abstract=existing.abstract or normalized.abstract,
+            topics=existing.topics if len(existing.topics) >= len(normalized.topics) else normalized.topics,
             cited_by_count=(
                 existing.cited_by_count
                 if existing.cited_by_count is not None

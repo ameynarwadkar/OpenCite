@@ -55,6 +55,7 @@ const seedSection = byId<HTMLElement>("seed-section");
 const seedList = byId<HTMLUListElement>("seed-list");
 const sharedOnlyToggle = byId<HTMLInputElement>("shared-only-toggle");
 const enrichYearsBtn = byId<HTMLButtonElement>("enrich-years-btn");
+const restoreHiddenBtn = byId<HTMLButtonElement>("restore-hidden-btn");
 const historyList = byId<HTMLUListElement>("history-list");
 const historyCount = byId<HTMLSpanElement>("history-count");
 const clearHistoryBtn = byId<HTMLButtonElement>("clear-history-btn");
@@ -88,9 +89,12 @@ const discoverList = byId<HTMLDivElement>("discover-list");
 // Inspector elements
 const inspClose = byId<HTMLButtonElement>("insp-close");
 const inspTitle = byId<HTMLHeadingElement>("insp-title");
+const inspSubtitle = byId<HTMLDivElement>("insp-subtitle");
+const inspHeaderMeta = byId<HTMLDivElement>("insp-header-meta");
 const inspEmpty = byId<HTMLDivElement>("insp-empty");
 const inspContent = byId<HTMLDivElement>("insp-content");
 const inspBadges = byId<HTMLDivElement>("insp-badges");
+const inspAbstract = byId<HTMLParagraphElement>("insp-abstract");
 const inspYear = byId<HTMLElement>("insp-year");
 const inspVenue = byId<HTMLElement>("insp-venue");
 const inspAuthors = byId<HTMLElement>("insp-authors");
@@ -98,12 +102,41 @@ const inspGlobalCites = byId<HTMLElement>("insp-global-cites");
 const inspLinks = byId<HTMLDivElement>("insp-links");
 const expandBtn = byId<HTMLButtonElement>("expand-btn");
 const expandCitedByBtn = byId<HTMLButtonElement>("expand-cited-by-btn");
+const toggleSeedBtn = byId<HTMLButtonElement>("toggle-seed-btn");
 const newGraphBtn = byId<HTMLButtonElement>("new-graph-btn");
 const pathBtn = byId<HTMLButtonElement>("path-btn");
+const copyBibtexBtn = byId<HTMLButtonElement>("copy-bibtex-btn");
+const hideNodeBtn = byId<HTMLButtonElement>("hide-node-btn");
+const connCitesCount = byId<HTMLElement>("conn-cites-count");
+const connCitedByCount = byId<HTMLElement>("conn-citedby-count");
+const connSharedCount = byId<HTMLElement>("conn-shared-count");
+const inspCitesSection = byId<HTMLDivElement>("insp-cites-section");
+const inspCites = byId<HTMLUListElement>("insp-cites");
 const inspCitedBySection = byId<HTMLDivElement>("insp-cited-by-section");
 const inspCitedBy = byId<HTMLUListElement>("insp-cited-by");
+const inspSharedSection = byId<HTMLDivElement>("insp-shared-section");
+const inspShared = byId<HTMLUListElement>("insp-shared");
+const inspConnEmpty = byId<HTMLParagraphElement>("insp-conn-empty");
+const inspReasons = byId<HTMLUListElement>("insp-reasons");
+const insBridgeScore = byId<HTMLElement>("ins-bridge-score");
+const insIndeg = byId<HTMLElement>("ins-indeg");
+const insOutdeg = byId<HTMLElement>("ins-outdeg");
+const inspTopicsSection = byId<HTMLDivElement>("insp-topics-section");
+const inspTopics = byId<HTMLDivElement>("insp-topics");
+const inspBridgeSeedsSection = byId<HTMLDivElement>("insp-bridge-seeds-section");
+const inspBridgeSeeds = byId<HTMLUListElement>("insp-bridge-seeds");
 const inspRawSection = byId<HTMLDivElement>("insp-raw-section");
 const inspRaw = byId<HTMLParagraphElement>("insp-raw");
+
+type InspectorTab = "overview" | "connections" | "insights" | "actions";
+let activeInspectorTab: InspectorTab = "overview";
+const inspTabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".insp-tab"));
+const inspTabPanels: Record<InspectorTab, HTMLElement> = {
+  overview: byId<HTMLElement>("tab-panel-overview"),
+  connections: byId<HTMLElement>("tab-panel-connections"),
+  insights: byId<HTMLElement>("tab-panel-insights"),
+  actions: byId<HTMLElement>("tab-panel-actions"),
+};
 
 // Bottom status bar
 const statSeeds = byId<HTMLElement>("stat-seeds");
@@ -370,6 +403,13 @@ function updateStatsAndSeeds(): void {
     enrichYearsBtn.classList.add("hidden");
   }
 
+  if (store.hiddenIds.size > 0) {
+    restoreHiddenBtn.textContent = `Restore hidden (${store.hiddenIds.size})`;
+    restoreHiddenBtn.classList.remove("hidden");
+  } else {
+    restoreHiddenBtn.classList.add("hidden");
+  }
+
   crossCiteBtn.classList.toggle("hidden", store.nodes.size < 3);
 
   // Render Seed Papers list
@@ -508,8 +548,39 @@ function hideTooltip(): void {
   hoverTooltip.classList.add("hidden");
 }
 
+function setInspectorTab(tab: InspectorTab): void {
+  activeInspectorTab = tab;
+  for (const btn of inspTabButtons) {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  }
+  (Object.keys(inspTabPanels) as InspectorTab[]).forEach((key) => {
+    inspTabPanels[key].classList.toggle("hidden", key !== tab);
+  });
+}
+
+function renderPaperJumpList(
+  listEl: HTMLUListElement,
+  items: Array<{ node: PaperNode; suffix?: string }>
+): void {
+  listEl.innerHTML = "";
+  for (const { node, suffix } of items) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = suffix ? `${formatFullLabel(node)} · ${suffix}` : formatFullLabel(node);
+    btn.addEventListener("click", () => {
+      graphView.focusNode(node.id);
+      openInspector(node.id);
+    });
+    li.appendChild(btn);
+    listEl.appendChild(li);
+  }
+}
+
 function renderEmptyInspector(): void {
   inspTitle.textContent = "Paper Inspector";
+  inspSubtitle.classList.add("hidden");
+  inspHeaderMeta.classList.add("hidden");
   inspEmpty.classList.remove("hidden");
   inspContent.classList.add("hidden");
 }
@@ -520,15 +591,21 @@ function openInspector(nodeId: string): void {
   store.selectedId = nodeId;
 
   const inDeg = store.computeInDegrees().get(nodeId) ?? 0;
+  const conn = store.getNodeConnections(nodeId);
+  const totalSeeds = Array.from(store.nodes.values()).filter((n) => n.is_seed).length;
+
+  // Sticky header
   inspTitle.textContent = node.title || "Untitled";
+  const subParts = [node.year, node.venue].filter(Boolean);
+  if (subParts.length > 0) {
+    inspSubtitle.textContent = subParts.join(" · ");
+    inspSubtitle.classList.remove("hidden");
+  } else {
+    inspSubtitle.classList.add("hidden");
+  }
+  inspHeaderMeta.classList.remove("hidden");
   inspEmpty.classList.add("hidden");
   inspContent.classList.remove("hidden");
-
-  inspYear.textContent = node.year ? String(node.year) : "—";
-  inspVenue.textContent = node.venue ?? "—";
-  inspAuthors.textContent = node.authors.length ? node.authors.join(", ") : "—";
-  inspGlobalCites.textContent =
-    typeof node.cited_by_count === "number" ? node.cited_by_count.toLocaleString() : "—";
 
   inspBadges.innerHTML = "";
   if (node.is_seed) inspBadges.innerHTML += `<span class="badge">Source</span>`;
@@ -555,40 +632,19 @@ function openInspector(nodeId: string): void {
     inspLinks.appendChild(a);
   }
 
-  expandBtn.textContent = node.is_expanded ? "Older ✓" : "← Older";
-  expandBtn.disabled = node.is_expanded || !node.expandable;
-
-  expandCitedByBtn.textContent = node.is_cited_by_expanded ? "Newer ✓" : "→ Newer";
-  expandCitedByBtn.disabled = node.is_cited_by_expanded || !node.expandable;
-
-  newGraphBtn.disabled = !node.expandable;
-
-  const citers: PaperNode[] = [];
-  for (const key of store.edges) {
-    const [src, dst] = key.split("->");
-    if (dst === nodeId) {
-      const citer = store.nodes.get(src);
-      if (citer) citers.push(citer);
-    }
-  }
-  inspCitedBy.innerHTML = "";
-  if (citers.length > 0) {
-    inspCitedBySection.classList.remove("hidden");
-    for (const citer of citers) {
-      const li = document.createElement("li");
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.textContent = formatFullLabel(citer);
-      btn.addEventListener("click", () => {
-        graphView.focusNode(citer.id);
-        openInspector(citer.id);
-      });
-      li.appendChild(btn);
-      inspCitedBy.appendChild(li);
-    }
+  // Tab 1: Overview
+  if (node.abstract) {
+    inspAbstract.textContent = node.abstract;
+    inspAbstract.classList.remove("muted");
   } else {
-    inspCitedBySection.classList.add("hidden");
+    inspAbstract.textContent = "No abstract indexed for this paper.";
+    inspAbstract.classList.add("muted");
   }
+  inspYear.textContent = node.year ? String(node.year) : "—";
+  inspVenue.textContent = node.venue ?? "—";
+  inspAuthors.textContent = node.authors.length ? node.authors.join(", ") : "—";
+  inspGlobalCites.textContent =
+    typeof node.cited_by_count === "number" ? node.cited_by_count.toLocaleString() : "—";
 
   if (node.raw_citation) {
     inspRawSection.classList.remove("hidden");
@@ -596,6 +652,94 @@ function openInspector(nodeId: string): void {
   } else {
     inspRawSection.classList.add("hidden");
   }
+
+  // Tab 2: Connections
+  connCitesCount.textContent = String(conn.cites.length);
+  connCitedByCount.textContent = String(conn.citedBy.length);
+  connSharedCount.textContent = String(conn.sharedWith.length);
+
+  inspCitesSection.classList.toggle("hidden", conn.cites.length === 0);
+  renderPaperJumpList(inspCites, conn.cites.map((n) => ({ node: n })));
+
+  inspCitedBySection.classList.toggle("hidden", conn.citedBy.length === 0);
+  renderPaperJumpList(inspCitedBy, conn.citedBy.map((n) => ({ node: n })));
+
+  inspSharedSection.classList.toggle("hidden", conn.sharedWith.length === 0);
+  renderPaperJumpList(
+    inspShared,
+    conn.sharedWith.map(({ node: n, count }) => ({ node: n, suffix: `${count} shared` }))
+  );
+
+  const hasAnyConn =
+    conn.cites.length > 0 || conn.citedBy.length > 0 || conn.sharedWith.length > 0;
+  inspConnEmpty.classList.toggle("hidden", hasAnyConn);
+
+  // Tab 3: Insights
+  const reasons: string[] = [];
+  if (node.is_seed) {
+    reasons.push("Seed paper directly loaded into your workspace.");
+  }
+  if (conn.connectedSeeds.length >= 2) {
+    reasons.push(
+      `Bridge paper connecting ${conn.connectedSeeds.length} of ${totalSeeds} seed papers.`
+    );
+  }
+  if (inDeg >= 2) {
+    reasons.push(`Cited by ${inDeg} papers within this graph.`);
+  }
+  if (typeof node.cited_by_count === "number" && node.cited_by_count >= 500) {
+    reasons.push(`High global impact (${node.cited_by_count.toLocaleString()} citations).`);
+  }
+  if (conn.sharedWith.length > 0) {
+    reasons.push(
+      `Shares references with ${conn.sharedWith.length} other paper${conn.sharedWith.length === 1 ? "" : "s"} in the network.`
+    );
+  }
+  if (reasons.length === 0) {
+    reasons.push("Direct citation in your current literature network. Expand older/newer to uncover more links.");
+  }
+
+  inspReasons.innerHTML = "";
+  for (const r of reasons) {
+    const li = document.createElement("li");
+    li.textContent = r;
+    inspReasons.appendChild(li);
+  }
+
+  const seedDenom = node.is_seed ? Math.max(1, totalSeeds - 1) : totalSeeds;
+  insBridgeScore.textContent = `${conn.connectedSeeds.length}/${seedDenom}`;
+  insIndeg.textContent = String(inDeg);
+  insOutdeg.textContent = String(conn.cites.length);
+
+  const topics = node.topics ?? [];
+  inspTopics.innerHTML = "";
+  if (topics.length > 0) {
+    inspTopicsSection.classList.remove("hidden");
+    for (const t of topics) {
+      const span = document.createElement("span");
+      span.className = "badge";
+      span.textContent = t;
+      inspTopics.appendChild(span);
+    }
+  } else {
+    inspTopicsSection.classList.add("hidden");
+  }
+
+  inspBridgeSeedsSection.classList.toggle("hidden", conn.connectedSeeds.length === 0);
+  renderPaperJumpList(inspBridgeSeeds, conn.connectedSeeds.map((n) => ({ node: n })));
+
+  // Tab 4: Actions
+  expandBtn.textContent = node.is_expanded ? "Older ✓" : "← Older";
+  expandBtn.disabled = node.is_expanded || !node.expandable;
+
+  expandCitedByBtn.textContent = node.is_cited_by_expanded ? "Newer ✓" : "→ Newer";
+  expandCitedByBtn.disabled = node.is_cited_by_expanded || !node.expandable;
+
+  toggleSeedBtn.textContent = node.is_seed ? "Remove seed" : "Add as seed";
+  newGraphBtn.disabled = !node.expandable;
+  copyBibtexBtn.textContent = "Copy BibTeX";
+
+  setInspectorTab(activeInspectorTab);
 
   if (!panelState.rightOpen) {
     panelState.rightOpen = true;
@@ -1020,6 +1164,52 @@ inspClose.addEventListener("click", () => {
   graphView.cy.elements().unselect();
   closeInspector();
 });
+inspTabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tab = btn.dataset.tab as InspectorTab | undefined;
+    if (tab) setInspectorTab(tab);
+  });
+});
+
+restoreHiddenBtn.addEventListener("click", () => {
+  store.hiddenIds.clear();
+  renderAll();
+});
+
+toggleSeedBtn.addEventListener("click", () => {
+  if (!store.selectedId) return;
+  const node = store.nodes.get(store.selectedId);
+  if (!node) return;
+  node.is_seed = !node.is_seed;
+  if (node.is_seed && !store.primarySeedId) store.primarySeedId = node.id;
+  renderAll();
+  store.saveHistory(layoutSelect.value as LayoutMode);
+  renderHistory();
+});
+
+copyBibtexBtn.addEventListener("click", async () => {
+  if (!store.selectedId) return;
+  const node = store.nodes.get(store.selectedId);
+  if (!node) return;
+  const bib = store.toBibtex(node);
+  try {
+    await navigator.clipboard.writeText(bib);
+    copyBibtexBtn.textContent = "Copied ✓";
+    window.setTimeout(() => {
+      copyBibtexBtn.textContent = "Copy BibTeX";
+    }, 1800);
+  } catch {
+    showMessages(["Could not access clipboard."], true);
+  }
+});
+
+hideNodeBtn.addEventListener("click", () => {
+  if (!store.selectedId) return;
+  store.hiddenIds.add(store.selectedId);
+  closeInspector();
+  renderAll();
+});
+
 expandBtn.addEventListener("click", () => void handleExpandOlder());
 expandCitedByBtn.addEventListener("click", () => void handleExpandNewer());
 newGraphBtn.addEventListener("click", () => void handleNewGraphFromNode());

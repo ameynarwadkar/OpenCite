@@ -14,6 +14,8 @@ class PaperNode(BaseModel):
     openalex_id: str | None = None
     url: str | None = None
     raw_citation: str | None = None
+    abstract: str | None = None
+    topics: list[str] = Field(default_factory=list)
     cited_by_count: int | None = None
     is_seed: bool = False
     is_expanded: bool = False

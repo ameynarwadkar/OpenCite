@@ -3,7 +3,12 @@ import json
 import httpx
 import pytest
 
-from backend.resolver import PaperResolver, classify_identifier, openalex_work_to_node
+from backend.resolver import (
+    PaperResolver,
+    classify_identifier,
+    openalex_work_to_node,
+    reconstruct_abstract,
+)
 
 
 def test_classify_identifier():
@@ -13,6 +18,26 @@ def test_classify_identifier():
     assert classify_identifier("https://doi.org/10.1145/3292500.3330919") == ("doi", "10.1145/3292500.3330919")
     assert classify_identifier("https://openalex.org/W2963403868") == ("openalex", "W2963403868")
     assert classify_identifier("not-an-id") is None
+
+
+def test_reconstruct_abstract_and_topics():
+    inv = {"Attention": [0], "is": [1], "all": [2], "you": [3], "need.": [4]}
+    assert reconstruct_abstract(inv) == "Attention is all you need."
+    assert reconstruct_abstract(None) is None
+
+    work = {
+        "id": "https://openalex.org/W2963403868",
+        "title": "Attention Is All You Need",
+        "publication_year": 2017,
+        "abstract_inverted_index": inv,
+        "topics": [
+            {"display_name": "Natural Language Processing"},
+            {"display_name": "Machine Translation"},
+        ],
+    }
+    node = openalex_work_to_node(work)
+    assert node.abstract == "Attention is all you need."
+    assert node.topics == ["Natural Language Processing", "Machine Translation"]
 
 
 def test_openalex_work_to_node():

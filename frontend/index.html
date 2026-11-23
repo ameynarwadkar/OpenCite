@@ -77,6 +77,9 @@
           <button id="enrich-years-btn" class="btn btn-outline btn-full hidden" type="button">
             Resolve years
           </button>
+          <button id="restore-hidden-btn" class="btn btn-outline btn-full hidden" type="button">
+            Restore hidden
+          </button>
         </section>
 
         <!-- Collapsible Saved Graphs / History -->
@@ -187,42 +190,128 @@
 
       <!-- Right Inspector (340px default, collapsible & resizable) -->
       <aside id="inspector" class="right-inspector hidden" aria-label="Paper inspector">
-        <header class="inspector-header">
-          <h2 id="insp-title">Select a paper</h2>
-          <button id="insp-close" class="icon-btn" type="button" title="Close (Esc)" aria-label="Close">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </header>
+        <div class="inspector-sticky">
+          <header class="inspector-header">
+            <div class="insp-head-text">
+              <h2 id="insp-title">Paper Inspector</h2>
+              <div id="insp-subtitle" class="insp-subtitle hidden"></div>
+            </div>
+            <button id="insp-close" class="icon-btn" type="button" title="Close (Esc)" aria-label="Close">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </header>
 
-        <div id="insp-empty" class="insp-empty">Click any node in the graph to inspect its details and connections.</div>
-
-        <div id="insp-content" class="insp-content hidden">
-          <div id="insp-badges" class="badge-row"></div>
-
-          <dl class="meta-grid">
-            <div><dt>Year</dt><dd id="insp-year">—</dd></div>
-            <div><dt>Citations</dt><dd id="insp-global-cites">—</dd></div>
-            <div class="full"><dt>Venue</dt><dd id="insp-venue">—</dd></div>
-            <div class="full"><dt>Authors</dt><dd id="insp-authors">—</dd></div>
-          </dl>
-
-          <div id="insp-links" class="link-row"></div>
-
-          <div class="inspector-actions">
-            <button id="expand-btn" class="btn btn-primary btn-full" type="button">← Older</button>
-            <button id="expand-cited-by-btn" class="btn btn-outline btn-full" type="button">→ Newer</button>
-            <button id="new-graph-btn" class="btn btn-outline btn-full" type="button">New graph</button>
-            <button id="path-btn" class="btn btn-outline btn-full" type="button">Path</button>
+          <div id="insp-header-meta" class="insp-header-meta hidden">
+            <div id="insp-badges" class="badge-row"></div>
+            <div id="insp-links" class="link-row"></div>
+            <div class="insp-tabs" role="tablist" aria-label="Inspector sections">
+              <button class="insp-tab active" data-tab="overview" type="button" role="tab">Overview</button>
+              <button class="insp-tab" data-tab="connections" type="button" role="tab">Connections</button>
+              <button class="insp-tab" data-tab="insights" type="button" role="tab">Insights</button>
+              <button class="insp-tab" data-tab="actions" type="button" role="tab">Actions</button>
+            </div>
           </div>
+        </div>
 
-          <div id="insp-cited-by-section" class="insp-block hidden">
-            <span class="label">Cited by</span>
-            <ul id="insp-cited-by" class="paper-list"></ul>
-          </div>
+        <div class="inspector-scroll">
+          <div id="insp-empty" class="insp-empty">Click any node in the graph to inspect its details and connections.</div>
 
-          <div id="insp-raw-section" class="insp-block hidden">
-            <span class="label">Reference</span>
-            <p id="insp-raw" class="raw-box"></p>
+          <div id="insp-content" class="insp-content hidden">
+            <!-- Tab: Overview -->
+            <div id="tab-panel-overview" class="insp-tab-panel">
+              <div class="insp-block">
+                <span class="label">Abstract</span>
+                <p id="insp-abstract" class="abstract-box"></p>
+              </div>
+
+              <dl class="meta-grid">
+                <div><dt>Year</dt><dd id="insp-year">—</dd></div>
+                <div><dt>Citations</dt><dd id="insp-global-cites">—</dd></div>
+                <div class="full"><dt>Venue</dt><dd id="insp-venue">—</dd></div>
+                <div class="full"><dt>Authors</dt><dd id="insp-authors">—</dd></div>
+              </dl>
+
+              <div id="insp-raw-section" class="insp-block hidden">
+                <span class="label">PDF Reference</span>
+                <p id="insp-raw" class="raw-box"></p>
+              </div>
+            </div>
+
+            <!-- Tab: Connections -->
+            <div id="tab-panel-connections" class="insp-tab-panel hidden">
+              <div class="mini-stats">
+                <div class="mini-stat"><strong id="conn-cites-count">0</strong><span>Cites</span></div>
+                <div class="mini-stat"><strong id="conn-citedby-count">0</strong><span>Cited by</span></div>
+                <div class="mini-stat"><strong id="conn-shared-count">0</strong><span>Shared</span></div>
+              </div>
+
+              <div id="insp-cites-section" class="insp-block hidden">
+                <span class="label">Cites (in graph)</span>
+                <ul id="insp-cites" class="paper-list"></ul>
+              </div>
+
+              <div id="insp-cited-by-section" class="insp-block hidden">
+                <span class="label">Cited by (in graph)</span>
+                <ul id="insp-cited-by" class="paper-list"></ul>
+              </div>
+
+              <div id="insp-shared-section" class="insp-block hidden">
+                <span class="label">Shared references</span>
+                <ul id="insp-shared" class="paper-list"></ul>
+              </div>
+
+              <p id="insp-conn-empty" class="muted-empty hidden">No connections in the current graph yet.</p>
+            </div>
+
+            <!-- Tab: Insights -->
+            <div id="tab-panel-insights" class="insp-tab-panel hidden">
+              <div class="insp-block">
+                <span class="label">Why it matters</span>
+                <ul id="insp-reasons" class="insight-list"></ul>
+              </div>
+
+              <div class="mini-stats">
+                <div class="mini-stat"><strong id="ins-bridge-score">0/0</strong><span>Seeds</span></div>
+                <div class="mini-stat"><strong id="ins-indeg">0</strong><span>In-deg</span></div>
+                <div class="mini-stat"><strong id="ins-outdeg">0</strong><span>Out-deg</span></div>
+              </div>
+
+              <div id="insp-topics-section" class="insp-block hidden">
+                <span class="label">Topics</span>
+                <div id="insp-topics" class="badge-row"></div>
+              </div>
+
+              <div id="insp-bridge-seeds-section" class="insp-block hidden">
+                <span class="label">Connected seeds</span>
+                <ul id="insp-bridge-seeds" class="paper-list"></ul>
+              </div>
+            </div>
+
+            <!-- Tab: Actions -->
+            <div id="tab-panel-actions" class="insp-tab-panel hidden">
+              <div class="insp-block">
+                <span class="label">Expand network</span>
+                <div class="inspector-actions">
+                  <button id="expand-btn" class="btn btn-primary btn-full" type="button">← Older</button>
+                  <button id="expand-cited-by-btn" class="btn btn-outline btn-full" type="button">→ Newer</button>
+                </div>
+              </div>
+
+              <div class="insp-block">
+                <span class="label">Explore</span>
+                <div class="inspector-actions">
+                  <button id="toggle-seed-btn" class="btn btn-outline btn-full" type="button">Add as seed</button>
+                  <button id="new-graph-btn" class="btn btn-outline btn-full" type="button">New graph</button>
+                  <button id="path-btn" class="btn btn-outline btn-full" type="button">Find path</button>
+                  <button id="copy-bibtex-btn" class="btn btn-outline btn-full" type="button">Copy BibTeX</button>
+                </div>
+              </div>
+
+              <div class="insp-block">
+                <span class="label">Visibility</span>
+                <button id="hide-node-btn" class="btn btn-outline btn-full btn-danger-outline" type="button">Hide paper</button>
+              </div>
+            </div>
           </div>
         </div>
       </aside>

@@ -63,6 +63,7 @@ export class GraphStore {
   expansionColorByPaper = new Map<string, string>();
   expansionColorIdx = 0;
   primarySeedId: string | null = null;
+  hiddenIds = new Set<string>();
   undoStack: UndoSnapshot[] = [];
   selectedId: string | null = null;
   activeHistoryId: string | null = null;
@@ -74,6 +75,7 @@ export class GraphStore {
     this.expansionColorByPaper.clear();
     this.expansionColorIdx = 0;
     this.primarySeedId = null;
+    this.hiddenIds.clear();
     this.undoStack = [];
     this.selectedId = null;
     this.activeHistoryId = null;
@@ -324,6 +326,11 @@ export class GraphStore {
           openalex_id: existing.openalex_id ?? incoming.openalex_id,
           url: existing.url ?? incoming.url,
           raw_citation: existing.raw_citation ?? incoming.raw_citation,
+          abstract: existing.abstract ?? incoming.abstract ?? null,
+          topics:
+            (existing.topics?.length ?? 0) >= (incoming.topics?.length ?? 0)
+              ? (existing.topics ?? [])
+              : (incoming.topics ?? []),
           cited_by_count: existing.cited_by_count ?? incoming.cited_by_count ?? null,
           is_seed: Boolean(existing.is_seed || incoming.is_seed),
           is_expanded: Boolean(existing.is_expanded || incoming.is_expanded),
@@ -353,6 +360,93 @@ export class GraphStore {
         }
       }
     }
+  }
+
+  getNodeConnections(nodeId: string): {
+    cites: PaperNode[];
+    citedBy: PaperNode[];
+    sharedWith: Array<{ node: PaperNode; count: number }>;
+    connectedSeeds: PaperNode[];
+  } {
+    const outSet = new Set<string>();
+    const inSet = new Set<string>();
+    const outByNode = new Map<string, Set<string>>();
+
+    for (const key of this.edges) {
+      const [src, dst] = key.split("->");
+      if (src === nodeId) outSet.add(dst);
+      if (dst === nodeId) inSet.add(src);
+      let s = outByNode.get(src);
+      if (!s) {
+        s = new Set<string>();
+        outByNode.set(src, s);
+      }
+      s.add(dst);
+    }
+
+    const cites = Array.from(outSet)
+      .map((id) => this.nodes.get(id))
+      .filter((n): n is PaperNode => Boolean(n));
+    const citedBy = Array.from(inSet)
+      .map((id) => this.nodes.get(id))
+      .filter((n): n is PaperNode => Boolean(n));
+
+    // Papers sharing >= 1 outgoing reference with this node
+    const sharedWith: Array<{ node: PaperNode; count: number }> = [];
+    if (outSet.size > 0) {
+      for (const [otherId, otherRefs] of outByNode.entries()) {
+        if (otherId === nodeId) continue;
+        let overlap = 0;
+        for (const r of outSet) {
+          if (otherRefs.has(r)) overlap += 1;
+        }
+        if (overlap > 0) {
+          const other = this.nodes.get(otherId);
+          if (other) sharedWith.push({ node: other, count: overlap });
+        }
+      }
+      sharedWith.sort((a, b) => b.count - a.count);
+    }
+
+    // Seed papers that reach this node (via directed or 2-hop connection)
+    const seeds = Array.from(this.nodes.values()).filter((n) => n.is_seed && n.id !== nodeId);
+    const connectedSeeds: PaperNode[] = [];
+    for (const seed of seeds) {
+      const path = this.findShortestPath(seed.id, nodeId);
+      if (path && path.edgeKeys.length <= 2) {
+        connectedSeeds.push(seed);
+      }
+    }
+
+    return { cites, citedBy, sharedWith: sharedWith.slice(0, 12), connectedSeeds };
+  }
+
+  toBibtex(node: PaperNode): string {
+    const firstAuthorLast = (node.authors[0] ?? "paper")
+      .split(/[,\s]+/)[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "") || "paper";
+    const yr = node.year ? String(node.year) : "nd";
+    const firstWord = (node.title || "work")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .split(/\s+/)
+      .find((w) => w.length > 3) ?? "work";
+    const key = `${firstAuthorLast}${yr}${firstWord}`;
+    const lines = [
+      `@article{${key},`,
+      `  title = {${node.title}},`,
+    ];
+    if (node.authors.length > 0) {
+      lines.push(`  author = {${node.authors.join(" and ")}},`);
+    }
+    if (node.year) lines.push(`  year = {${node.year}},`);
+    if (node.venue) lines.push(`  journal = {${node.venue}},`);
+    if (node.doi) lines.push(`  doi = {${node.doi}},`);
+    if (node.arxiv_id) lines.push(`  eprint = {${node.arxiv_id}},`);
+    if (node.url) lines.push(`  url = {${node.url}},`);
+    lines.push("}");
+    return lines.join("\n");
   }
 
   toExportJson(): { nodes: PaperNode[]; edges: CitationEdge[] } {

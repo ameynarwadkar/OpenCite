@@ -408,6 +408,7 @@ export class CitationGraphView {
 
       const visibleIds = new Set<string>();
       for (const [id, node] of this.store.nodes.entries()) {
+        if (this.store.hiddenIds.has(id)) continue;
         const deg = inDeg.get(id) ?? 0;
         const isShared = deg >= sharedThreshold && !node.is_seed;
         if (sharedOnly && !node.is_seed && deg < 2) continue;
