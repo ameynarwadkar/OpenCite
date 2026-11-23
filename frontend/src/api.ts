@@ -1,4 +1,10 @@
-import type { EnrichResponse, ExpandResponse, GraphPayload, PaperNode } from "./types";
+import type {
+  CrossCitationsResponse,
+  EnrichResponse,
+  ExpandResponse,
+  GraphPayload,
+  PaperNode,
+} from "./types";
 
 async function parseJsonOrThrow<T>(resp: Response, fallbackMsg: string): Promise<T> {
   const data = await resp.json().catch(() => ({}));
@@ -81,4 +87,25 @@ export async function apiEnrichNodes(nodes: PaperNode[]): Promise<EnrichResponse
     }),
   });
   return parseJsonOrThrow<EnrichResponse>(resp, "Failed to resolve unknown years.");
+}
+
+export async function apiFindCrossCitations(
+  nodes: PaperNode[]
+): Promise<CrossCitationsResponse> {
+  const resp = await fetch("/api/papers/cross-citations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        title: n.title,
+        year: n.year,
+        doi: n.doi,
+        arxiv_id: n.arxiv_id,
+        openalex_id: n.openalex_id,
+        raw_citation: n.raw_citation,
+      })),
+    }),
+  });
+  return parseJsonOrThrow<CrossCitationsResponse>(resp, "Cross-citation lookup failed.");
 }

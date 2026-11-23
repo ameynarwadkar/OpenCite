@@ -59,6 +59,7 @@ def _make_mock_resolver() -> PaperResolver:
                         "id": "https://openalex.org/W100",
                         "title": "Neural Machine Translation",
                         "publication_year": 2015,
+                        "referenced_works": ["https://openalex.org/W200"],
                     }
                 )
             if "W200" in ids:
@@ -67,6 +68,7 @@ def _make_mock_resolver() -> PaperResolver:
                         "id": "https://openalex.org/W200",
                         "title": "Sequence to Sequence Learning",
                         "publication_year": 2014,
+                        "referenced_works": [],
                     }
                 )
             return httpx.Response(200, json={"results": results})
@@ -235,6 +237,29 @@ def test_cited_by_endpoint_returns_forward_citations():
         assert data["edges"][0]["target"] == "doi:10.48550/arxiv.1706.03762"
         target_node = next(n for n in data["nodes"] if n["id"] == data["source_id"])
         assert target_node["is_cited_by_expanded"] is True
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cross_citations_endpoint_connects_references():
+    resolver = _make_mock_resolver()
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            "/api/papers/cross-citations",
+            json={
+                "nodes": [
+                    {"id": "openalex:W100", "openalex_id": "W100", "title": "Neural Machine Translation"},
+                    {"id": "openalex:W200", "openalex_id": "W200", "title": "Sequence to Sequence Learning"},
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["edges"]) == 1
+        assert data["edges"][0]["source"] == "openalex:W100"
+        assert data["edges"][0]["target"] == "openalex:W200"
     finally:
         app.dependency_overrides.clear()
 

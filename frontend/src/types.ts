@@ -42,6 +42,24 @@ export interface EnrichResponse {
   warnings: string[];
 }
 
+export interface CrossCitationsResponse {
+  edges: CitationEdge[];
+  updates: EnrichUpdate[];
+  warnings: string[];
+}
+
+export interface RankedPaper {
+  node: PaperNode;
+  localCites: number;
+  score: number;
+}
+
+export interface PathResult {
+  nodeIds: string[];
+  edgeKeys: string[];
+  kind: "directed" | "reverse" | "undirected";
+}
+
 export type LayoutMode = "cose" | "timeline" | "breadthfirst" | "concentric";
 export type LabelMode = "auto" | "compact" | "full" | "hover";
 export type ThemeMode = "light" | "dark";

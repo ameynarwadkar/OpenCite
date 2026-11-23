@@ -77,3 +77,13 @@ class EnrichResponse(BaseModel):
     updates: list[EnrichUpdate] = Field(default_factory=list)
     unresolved_count: int = 0
     warnings: list[str] = Field(default_factory=list)
+
+
+class CrossCitationsRequest(BaseModel):
+    nodes: list[EnrichNodeInput] = Field(default_factory=list)
+
+
+class CrossCitationsResponse(BaseModel):
+    edges: list[CitationEdge] = Field(default_factory=list)
+    updates: list[EnrichUpdate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

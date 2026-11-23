@@ -7,8 +7,11 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.graph_builder import GraphBuilder
+from backend.graph_builder import GraphBuilder, normalize_openalex_id
 from backend.models import (
+    CitationEdge,
+    CrossCitationsRequest,
+    CrossCitationsResponse,
     EnrichRequest,
     EnrichResponse,
     EnrichUpdate,
@@ -354,3 +357,89 @@ async def enrich_papers(
         unresolved_count=unresolved,
         warnings=warnings,
     )
+
+
+@app.post("/api/papers/cross-citations", response_model=CrossCitationsResponse)
+async def find_cross_citations(
+    payload: CrossCitationsRequest,
+    resolver: PaperResolver = Depends(get_resolver),
+) -> CrossCitationsResponse:
+    """Discover citation edges between papers already in the graph via batched OpenAlex queries."""
+    nodes = payload.nodes[:200]
+    warnings: list[str] = []
+    if len(payload.nodes) > 200:
+        warnings.append("Checking cross-citations for the first 200 papers.")
+
+    oa_to_node_id: dict[str, str] = {}
+    updates: list[EnrichUpdate] = []
+    dois_to_fetch: dict[str, str] = {}
+    unmatched_for_title: list = []
+
+    for item in nodes:
+        if item.openalex_id:
+            norm_oa = normalize_openalex_id(item.openalex_id)
+            if norm_oa:
+                oa_to_node_id[norm_oa] = item.id
+                continue
+        doi_key = _lookup_key_for_doi_enrichment(item.doi, item.arxiv_id)
+        if doi_key:
+            dois_to_fetch[doi_key] = item.id
+        elif item.title:
+            unmatched_for_title.append(item)
+
+    if dois_to_fetch:
+        enriched_by_doi = await resolver.fetch_works_by_dois(list(dois_to_fetch.keys()))
+        for doi_key, work in enriched_by_doi.items():
+            old_id = dois_to_fetch[doi_key]
+            node = openalex_work_to_node(work, is_seed=False, is_expanded=False)
+            if node.openalex_id:
+                oa_to_node_id[node.openalex_id] = old_id
+                updates.append(EnrichUpdate(old_id=old_id, node=node))
+
+    if unmatched_for_title:
+        sem = asyncio.Semaphore(6)
+
+        async def _resolve_title(item):
+            async with sem:
+                work = await resolver.resolve_by_title(item.title or "", year=item.year)
+                return item, work
+
+        title_results = await asyncio.gather(
+            *(_resolve_title(it) for it in unmatched_for_title[:25])
+        )
+        for item, work in title_results:
+            if work is None:
+                continue
+            node = openalex_work_to_node(work, is_seed=False, is_expanded=False)
+            if item.raw_citation:
+                node = node.model_copy(update={"raw_citation": item.raw_citation})
+            if node.openalex_id:
+                oa_to_node_id[node.openalex_id] = item.id
+                updates.append(EnrichUpdate(old_id=item.id, node=node))
+
+    all_oa_ids = list(oa_to_node_id.keys())
+    if len(all_oa_ids) < 2:
+        return CrossCitationsResponse(
+            edges=[],
+            updates=updates,
+            warnings=["Not enough OpenAlex-linked papers to check cross-citations."],
+        )
+
+    works = await resolver.fetch_works_by_openalex_ids(all_oa_ids)
+    final_id_map: dict[str, str] = {upd.old_id: upd.node.id for upd in updates}
+
+    edge_set: set[tuple[str, str]] = set()
+    for work in works:
+        src_oa = normalize_openalex_id(work.get("id"))
+        if not src_oa or src_oa not in oa_to_node_id:
+            continue
+        src_id = final_id_map.get(oa_to_node_id[src_oa], oa_to_node_id[src_oa])
+        for raw_ref in work.get("referenced_works") or []:
+            ref_oa = normalize_openalex_id(raw_ref)
+            if ref_oa and ref_oa in oa_to_node_id:
+                dst_id = final_id_map.get(oa_to_node_id[ref_oa], oa_to_node_id[ref_oa])
+                if src_id != dst_id:
+                    edge_set.add((src_id, dst_id))
+
+    edges = [CitationEdge(source=s, target=t) for s, t in sorted(edge_set)]
+    return CrossCitationsResponse(edges=edges, updates=updates, warnings=warnings)

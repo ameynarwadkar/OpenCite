@@ -4,6 +4,8 @@ import type {
   HistoryEntry,
   LayoutMode,
   PaperNode,
+  PathResult,
+  RankedPaper,
   UndoSnapshot,
 } from "./types";
 
@@ -85,6 +87,111 @@ export class GraphStore {
       inDeg.set(dst, (inDeg.get(dst) ?? 0) + 1);
     }
     return inDeg;
+  }
+
+  getTopFoundational(limit = 5): RankedPaper[] {
+    const inDeg = this.computeInDegrees();
+    const candidates: RankedPaper[] = [];
+    for (const [id, node] of this.nodes.entries()) {
+      if (node.is_seed) continue;
+      const localCites = inDeg.get(id) ?? 0;
+      const globalScore = Math.log10((node.cited_by_count ?? 0) + 1);
+      const score = localCites * 3 + globalScore;
+      candidates.push({ node, localCites, score });
+    }
+    candidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
+    });
+    return candidates.slice(0, limit);
+  }
+
+  findShortestPath(startId: string, targetId: string): PathResult | null {
+    if (startId === targetId || !this.nodes.has(startId) || !this.nodes.has(targetId)) {
+      return null;
+    }
+
+    const outAdj = new Map<string, string[]>();
+    const undirAdj = new Map<string, Array<{ next: string; edgeKey: string }>>();
+    for (const key of this.edges) {
+      const [src, dst] = key.split("->");
+      const oList = outAdj.get(src) ?? [];
+      oList.push(dst);
+      outAdj.set(src, oList);
+
+      const u1 = undirAdj.get(src) ?? [];
+      u1.push({ next: dst, edgeKey: key });
+      undirAdj.set(src, u1);
+
+      const u2 = undirAdj.get(dst) ?? [];
+      u2.push({ next: src, edgeKey: key });
+      undirAdj.set(dst, u2);
+    }
+
+    const bfsDirected = (from: string, to: string): { nodeIds: string[]; edgeKeys: string[] } | null => {
+      const queue: string[] = [from];
+      const prev = new Map<string, string | null>([[from, null]]);
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        if (cur === to) break;
+        for (const nxt of outAdj.get(cur) ?? []) {
+          if (!prev.has(nxt)) {
+            prev.set(nxt, cur);
+            queue.push(nxt);
+          }
+        }
+      }
+      if (!prev.has(to)) return null;
+      const nodeIds: string[] = [];
+      let cur: string | null = to;
+      while (cur !== null) {
+        nodeIds.push(cur);
+        cur = prev.get(cur) ?? null;
+      }
+      nodeIds.reverse();
+      const edgeKeys: string[] = [];
+      for (let i = 0; i < nodeIds.length - 1; i += 1) {
+        edgeKeys.push(`${nodeIds[i]}->${nodeIds[i + 1]}`);
+      }
+      return { nodeIds, edgeKeys };
+    };
+
+    const fwd = bfsDirected(startId, targetId);
+    if (fwd) return { ...fwd, kind: "directed" };
+
+    const rev = bfsDirected(targetId, startId);
+    if (rev) return { ...rev, kind: "reverse" };
+
+    // Undirected fallback (connects via shared citations)
+    const queue: string[] = [startId];
+    const prev = new Map<string, { node: string; edgeKey: string } | null>([[startId, null]]);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (cur === targetId) break;
+      for (const step of undirAdj.get(cur) ?? []) {
+        if (!prev.has(step.next)) {
+          prev.set(step.next, { node: cur, edgeKey: step.edgeKey });
+          queue.push(step.next);
+        }
+      }
+    }
+    if (!prev.has(targetId)) return null;
+    const nodeIds: string[] = [];
+    const edgeKeys: string[] = [];
+    let cur: string | null = targetId;
+    while (cur !== null) {
+      nodeIds.push(cur);
+      const p: { node: string; edgeKey: string } | null = prev.get(cur) ?? null;
+      if (p) {
+        edgeKeys.push(p.edgeKey);
+        cur = p.node;
+      } else {
+        cur = null;
+      }
+    }
+    nodeIds.reverse();
+    edgeKeys.reverse();
+    return { nodeIds, edgeKeys, kind: "undirected" };
   }
 
   getColorForExpandedPaper(paperId: string): string {

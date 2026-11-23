@@ -214,6 +214,33 @@ export class CitationGraphView {
             "z-index": 45,
           },
         },
+        {
+          selector: ".path-dimmed",
+          style: { opacity: 0.12 },
+        },
+        {
+          selector: "node.paper.path-active",
+          style: {
+            opacity: 1,
+            label: "data(fullLabel)",
+            "text-background-opacity": 0.98,
+            "text-border-color": "#38bdf8",
+            "text-border-opacity": 1,
+            "border-width": 4,
+            "border-color": "#38bdf8",
+            "z-index": 70,
+          },
+        },
+        {
+          selector: "edge.path-active",
+          style: {
+            opacity: 1,
+            width: 3.2,
+            "line-color": "#38bdf8",
+            "target-arrow-color": "#38bdf8",
+            "z-index": 65,
+          },
+        },
       ],
     });
 
@@ -429,6 +456,37 @@ export class CitationGraphView {
     this.updateLabelVisibility();
   }
 
+  highlightPath(nodeIds: string[], edgeKeys: string[]): void {
+    this.clearPathHighlight();
+    const nodeSet = new Set(nodeIds);
+    const edgeSet = new Set(edgeKeys);
+    const pathEles = this.cy.collection();
+
+    this.cy.batch(() => {
+      this.cy.elements(".paper, edge").addClass("path-dimmed");
+      this.cy.nodes(".paper").forEach((n) => {
+        if (nodeSet.has(n.id())) {
+          n.removeClass("path-dimmed").addClass("path-active");
+          pathEles.merge(n);
+        }
+      });
+      this.cy.edges().forEach((e) => {
+        if (edgeSet.has(e.id())) {
+          e.removeClass("path-dimmed").addClass("path-active");
+          pathEles.merge(e);
+        }
+      });
+    });
+
+    if (pathEles.nonempty()) {
+      this.cy.animate({ fit: { eles: pathEles, padding: 80 } }, { duration: 320 });
+    }
+  }
+
+  clearPathHighlight(): void {
+    this.cy.elements().removeClass("path-dimmed path-active");
+  }
+
   private applyTimelineLayout(): void {
     this.cy.nodes(".year-header").remove();
     const paperNodes = this.cy.nodes(".paper");
@@ -567,7 +625,12 @@ export class CitationGraphView {
     if (this.layoutMode === "cose") {
       const seeds = this.cy.nodes(".paper.seed");
       const expanded = this.cy.nodes(".paper.expanded");
-      if (seeds.length === 1 && expanded.length === 0 && paperNodes.length > 8) {
+      const isPureStar =
+        seeds.length === 1 &&
+        expanded.length === 0 &&
+        paperNodes.length > 8 &&
+        this.cy.edges().toArray().every((e) => e.source().id() === seeds[0].id());
+      if (isPureStar) {
         this.applyCleanStarRadialLayout(seeds[0], paperNodes.not(seeds[0]));
         return;
       }

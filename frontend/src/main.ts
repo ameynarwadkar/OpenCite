@@ -3,6 +3,7 @@ import {
   apiEnrichNodes,
   apiExpandCitedBy,
   apiExpandReferences,
+  apiFindCrossCitations,
   apiLookupIdentifiers,
   apiUploadPdfs,
 } from "./api";
@@ -31,18 +32,24 @@ const layoutSelect = byId<HTMLSelectElement>("layout-select");
 const labelModeSelect = byId<HTMLSelectElement>("label-mode-select");
 const sharedOnlyToggle = byId<HTMLInputElement>("shared-only-toggle");
 const searchInput = byId<HTMLInputElement>("search-input");
+const crossCiteBtn = byId<HTMLButtonElement>("cross-cite-btn");
 const enrichYearsBtn = byId<HTMLButtonElement>("enrich-years-btn");
 const undoBtn = byId<HTMLButtonElement>("undo-btn");
 const fitBtn = byId<HTMLButtonElement>("fit-btn");
 const exportBtn = byId<HTMLButtonElement>("export-btn");
 const clearBtn = byId<HTMLButtonElement>("clear-btn");
 const statusArea = byId<HTMLDivElement>("status-area");
+const topPapersSection = byId<HTMLElement>("top-papers-section");
+const topPapersList = byId<HTMLOListElement>("top-papers-list");
 const historyList = byId<HTMLUListElement>("history-list");
 const clearHistoryBtn = byId<HTMLButtonElement>("clear-history-btn");
 const emptyState = byId<HTMLDivElement>("empty-state");
 const loadingOverlay = byId<HTMLDivElement>("loading-overlay");
 const loadingText = byId<HTMLSpanElement>("loading-text");
 const hoverTooltip = byId<HTMLDivElement>("hover-tooltip");
+const pathBanner = byId<HTMLDivElement>("path-banner");
+const pathBannerText = byId<HTMLSpanElement>("path-banner-text");
+const pathClearBtn = byId<HTMLButtonElement>("path-clear-btn");
 
 const statSeeds = byId<HTMLElement>("stat-seeds");
 const statNodes = byId<HTMLElement>("stat-nodes");
@@ -61,16 +68,21 @@ const inspLinks = byId<HTMLDivElement>("insp-links");
 const expandBtn = byId<HTMLButtonElement>("expand-btn");
 const expandCitedByBtn = byId<HTMLButtonElement>("expand-cited-by-btn");
 const newGraphBtn = byId<HTMLButtonElement>("new-graph-btn");
+const pathBtn = byId<HTMLButtonElement>("path-btn");
 const inspCitedBySection = byId<HTMLDivElement>("insp-cited-by-section");
 const inspCitedBy = byId<HTMLUListElement>("insp-cited-by");
 const inspRawSection = byId<HTMLDivElement>("insp-raw-section");
 const inspRaw = byId<HTMLParagraphElement>("insp-raw");
 
 const store = new GraphStore();
+let pathStartId: string | null = null;
+let pathActive = false;
 
 const graphView = new CitationGraphView(byId<HTMLDivElement>("cy"), store, {
-  onSelectNode: (nodeId) => openInspector(nodeId),
-  onClearSelection: () => closeInspector(),
+  onSelectNode: (nodeId) => handleNodeSelected(nodeId),
+  onClearSelection: () => {
+    if (!pathActive && !pathStartId) closeInspector();
+  },
   onHoverNode: (nodeId, pos) => showTooltip(nodeId, pos),
   onUnhoverNode: () => hideTooltip(),
 });
@@ -124,6 +136,108 @@ function updateStats(): void {
   } else {
     enrichYearsBtn.classList.add("hidden");
   }
+
+  crossCiteBtn.classList.toggle("hidden", store.nodes.size < 3);
+}
+
+function formatCompactCount(n: number | null): string {
+  if (n === null) return "";
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function renderTopPapers(): void {
+  const ranked = store.getTopFoundational(5);
+  topPapersList.innerHTML = "";
+  if (ranked.length === 0) {
+    topPapersSection.classList.add("hidden");
+    return;
+  }
+
+  topPapersSection.classList.remove("hidden");
+  ranked.forEach((entry, idx) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "top-item-btn";
+    btn.title = entry.node.title;
+    btn.addEventListener("click", () => {
+      graphView.focusNode(entry.node.id);
+      openInspector(entry.node.id);
+    });
+
+    const rank = document.createElement("span");
+    rank.className = "top-rank";
+    rank.textContent = String(idx + 1);
+
+    const body = document.createElement("span");
+    body.className = "top-body";
+
+    const title = document.createElement("span");
+    title.className = "top-title";
+    title.textContent = entry.node.title;
+
+    const parts: string[] = [];
+    if (entry.localCites > 0) parts.push(`${entry.localCites} local`);
+    const globalStr = formatCompactCount(entry.node.cited_by_count);
+    if (globalStr) parts.push(`${globalStr} global`);
+    if (entry.node.year) parts.push(String(entry.node.year));
+
+    const meta = document.createElement("span");
+    meta.className = "top-meta";
+    meta.textContent = parts.join(" · ");
+
+    body.appendChild(title);
+    body.appendChild(meta);
+    btn.appendChild(rank);
+    btn.appendChild(body);
+    li.appendChild(btn);
+    topPapersList.appendChild(li);
+  });
+}
+
+function clearPathMode(): void {
+  pathStartId = null;
+  pathActive = false;
+  pathBanner.classList.add("hidden");
+  graphView.clearPathHighlight();
+}
+
+function startPathFromSelected(): void {
+  if (!store.selectedId) return;
+  const startNode = store.nodes.get(store.selectedId);
+  if (!startNode) return;
+  pathStartId = startNode.id;
+  pathActive = false;
+  graphView.clearPathHighlight();
+  pathBannerText.textContent = `Path from "${formatCompactLabel(startNode)}" — click target`;
+  pathBanner.classList.remove("hidden");
+}
+
+function handleNodeSelected(nodeId: string): void {
+  if (pathStartId && nodeId !== pathStartId) {
+    const startNode = store.nodes.get(pathStartId);
+    const targetNode = store.nodes.get(nodeId);
+    const result = store.findShortestPath(pathStartId, nodeId);
+    pathStartId = null;
+    if (!result) {
+      pathActive = false;
+      pathBannerText.textContent = `No path between "${formatCompactLabel(startNode!)}" and "${formatCompactLabel(targetNode!)}"`;
+      pathBanner.classList.remove("hidden");
+      openInspector(nodeId);
+      return;
+    }
+    pathActive = true;
+    const hops = result.edgeKeys.length;
+    const kindLabel =
+      result.kind === "undirected" ? "via shared citation" : "directed";
+    pathBannerText.textContent = `Path · ${hops} hop${hops === 1 ? "" : "s"} (${kindLabel})`;
+    pathBanner.classList.remove("hidden");
+    graphView.highlightPath(result.nodeIds, result.edgeKeys);
+    openInspector(nodeId);
+    return;
+  }
+  openInspector(nodeId);
 }
 
 function updateUndoButton(): void {
@@ -134,8 +248,10 @@ function updateUndoButton(): void {
 }
 
 function renderAll(): void {
+  clearPathMode();
   graphView.render(sharedOnlyToggle.checked, searchInput.value);
   updateStats();
+  renderTopPapers();
   updateUndoButton();
   emptyState.classList.toggle("hidden", store.nodes.size > 0);
 
@@ -480,6 +596,48 @@ async function handleNewGraphFromNode(): Promise<void> {
   }
 }
 
+async function handleCrossCitations(): Promise<void> {
+  const allNodes = Array.from(store.nodes.values());
+  if (allNodes.length < 3) return;
+
+  crossCiteBtn.disabled = true;
+  setLoading(true, `Checking cross-citations across ${allNodes.length} papers...`);
+  showMessages([]);
+  try {
+    const data = await apiFindCrossCitations(allNodes);
+    const beforeEdges = store.edges.size;
+    store.pushUndoSnapshot("Connect references");
+
+    for (const upd of data.updates) {
+      store.mergePayload({ nodes: [upd.node], edges: [], source_id: upd.node.id }, upd.old_id);
+    }
+    store.mergePayload({ nodes: [], edges: data.edges });
+    const added = store.edges.size - beforeEdges;
+
+    if (added > 0 || data.updates.length > 0) {
+      renderAll();
+      store.saveHistory(layoutSelect.value as LayoutMode);
+      renderHistory();
+    } else {
+      store.undoStack.pop();
+      updateUndoButton();
+    }
+
+    const msgs = [...data.warnings];
+    msgs.unshift(
+      added > 0
+        ? `Connected ${added} cross-citation${added === 1 ? "" : "s"} between references.`
+        : "No additional cross-citations found among current papers."
+    );
+    showMessages(msgs);
+  } catch (err) {
+    showMessages([err instanceof Error ? err.message : "Cross-citation lookup failed."], true);
+  } finally {
+    crossCiteBtn.disabled = false;
+    setLoading(false);
+  }
+}
+
 async function handleEnrichYears(): Promise<void> {
   const undated = Array.from(store.nodes.values()).filter((n) => !n.year);
   if (undated.length === 0) return;
@@ -563,7 +721,9 @@ labelModeSelect.addEventListener("change", () =>
 );
 sharedOnlyToggle.addEventListener("change", () => renderAll());
 searchInput.addEventListener("input", () => graphView.applySearchHighlight(searchInput.value));
+crossCiteBtn.addEventListener("click", () => void handleCrossCitations());
 enrichYearsBtn.addEventListener("click", () => void handleEnrichYears());
+pathClearBtn.addEventListener("click", () => clearPathMode());
 undoBtn.addEventListener("click", () => handleUndo());
 fitBtn.addEventListener("click", () => graphView.fit());
 
@@ -599,6 +759,7 @@ inspClose.addEventListener("click", () => {
 expandBtn.addEventListener("click", () => void handleExpandOlder());
 expandCitedByBtn.addEventListener("click", () => void handleExpandNewer());
 newGraphBtn.addEventListener("click", () => void handleNewGraphFromNode());
+pathBtn.addEventListener("click", () => startPathFromSelected());
 
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {

@@ -78,6 +78,10 @@
 
         <input id="search-input" class="control" type="search" placeholder="Search..." />
 
+        <button id="cross-cite-btn" class="btn btn-outline btn-full hidden" type="button">
+          Connect refs
+        </button>
+
         <button id="enrich-years-btn" class="btn btn-outline btn-full hidden" type="button">
           Resolve years
         </button>
@@ -92,6 +96,12 @@
 
       <!-- Status -->
       <div id="status-area" class="status-area" aria-live="polite"></div>
+
+      <!-- Top Foundational Papers -->
+      <section id="top-papers-section" class="section top-section hidden">
+        <span class="label">Top papers</span>
+        <ol id="top-papers-list" class="top-list"></ol>
+      </section>
 
       <!-- History -->
       <section class="section history-section">
@@ -109,6 +119,11 @@
     <main class="canvas-wrap">
       <div id="cy" class="cy-canvas"></div>
       <div id="hover-tooltip" class="hover-tooltip hidden"></div>
+
+      <div id="path-banner" class="path-banner hidden">
+        <span id="path-banner-text"></span>
+        <button id="path-clear-btn" class="text-btn" type="button">Clear</button>
+      </div>
 
       <div id="empty-state" class="empty-state">
         <div class="empty-card">
@@ -152,7 +167,8 @@
       <div class="inspector-actions">
         <button id="expand-btn" class="btn btn-primary btn-full" type="button">← Older</button>
         <button id="expand-cited-by-btn" class="btn btn-outline btn-full" type="button">→ Newer</button>
-        <button id="new-graph-btn" class="btn btn-outline btn-full span-2" type="button">New graph</button>
+        <button id="new-graph-btn" class="btn btn-outline btn-full" type="button">New graph</button>
+        <button id="path-btn" class="btn btn-outline btn-full" type="button">Path</button>
       </div>
 
       <div id="insp-cited-by-section" class="insp-block hidden">
