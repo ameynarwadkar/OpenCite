@@ -32,7 +32,7 @@ export class CitationGraphView {
           style: {
             label: "data(displayLabel)",
             "font-size": 10.5,
-            "font-family": "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+            "font-family": '"Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             color: "#09090b",
             "text-valign": "bottom",
             "text-halign": "center",
