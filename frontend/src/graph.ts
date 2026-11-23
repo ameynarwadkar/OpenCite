@@ -23,7 +23,7 @@ export class CitationGraphView {
     this.cy = cytoscape({
       container,
       elements: [],
-      wheelSensitivity: 3.5,
+      wheelSensitivity: 1.8,
       minZoom: 0.1,
       maxZoom: 5,
       style: [
@@ -345,23 +345,55 @@ export class CitationGraphView {
   render(sharedOnly: boolean, searchQuery: string): void {
     const inDeg = this.store.computeInDegrees();
 
+    // Determine dynamic hub threshold so dense cross-cited graphs keep clear visual hierarchy
+    const nonSeedDegrees: number[] = [];
+    for (const [id, node] of this.store.nodes.entries()) {
+      if (!node.is_seed) nonSeedDegrees.push(inDeg.get(id) ?? 0);
+    }
+    const multiCitedCount = nonSeedDegrees.filter((d) => d >= 2).length;
+    let sharedThreshold = 2;
+    if (nonSeedDegrees.length >= 15 && multiCitedCount > nonSeedDegrees.length * 0.35) {
+      const sorted = [...nonSeedDegrees].sort((a, b) => b - a);
+      const topCutIdx = Math.min(sorted.length - 1, Math.max(7, Math.floor(sorted.length * 0.2)));
+      sharedThreshold = Math.max(3, sorted[topCutIdx]);
+    }
+
+    // Identify top 8 non-seed hubs for clean overview labeling in Auto mode
+    const topHubIds = new Set(
+      Array.from(this.store.nodes.entries())
+        .filter(([, n]) => !n.is_seed)
+        .sort((a, b) => (inDeg.get(b[0]) ?? 0) - (inDeg.get(a[0]) ?? 0))
+        .filter(([id]) => (inDeg.get(id) ?? 0) >= 2)
+        .slice(0, 8)
+        .map(([id]) => id)
+    );
+
     this.cy.batch(() => {
       this.cy.elements().remove();
 
       const visibleIds = new Set<string>();
       for (const [id, node] of this.store.nodes.entries()) {
         const deg = inDeg.get(id) ?? 0;
-        const isShared = deg >= 2 && !node.is_seed;
-        if (sharedOnly && !node.is_seed && !isShared) continue;
+        const isShared = deg >= sharedThreshold && !node.is_seed;
+        if (sharedOnly && !node.is_seed && deg < 2) continue;
         visibleIds.add(id);
 
-        const size = node.is_seed ? 36 : isShared ? Math.min(40, 22 + deg * 4) : 17;
+        const size = node.is_seed
+          ? 36
+          : isShared
+            ? Math.min(38, 22 + Math.min(deg, 8) * 2)
+            : deg >= 2
+              ? 20
+              : 15;
         const classes = ["paper"];
         if (node.is_seed) {
           classes.push("seed");
           if (id === this.store.primarySeedId) classes.push("primary-seed");
         } else if (isShared) {
           classes.push("shared");
+        }
+        if (topHubIds.has(id)) {
+          classes.push("top-hub");
         }
         if ((node.is_expanded || node.is_cited_by_expanded) && !node.is_seed) {
           classes.push("expanded");
@@ -408,7 +440,6 @@ export class CitationGraphView {
     this.cy.batch(() => {
       paperNodes.forEach((ele) => {
         const isSeed = ele.hasClass("seed");
-        const isShared = ele.hasClass("shared");
         ele.toggleClass("timeline-node", isTimeline);
 
         if (this.labelMode === "full") {
@@ -422,7 +453,8 @@ export class CitationGraphView {
           ele.toggleClass("hide-label", !isSeed);
         } else {
           ele.data("displayLabel", isSeed ? ele.data("fullLabel") : ele.data("compactLabel"));
-          const show = isSeed || isShared || isTimeline || total <= 20 || zoomedIn;
+          const isTopHub = ele.hasClass("top-hub");
+          const show = isSeed || isTopHub || isTimeline || total <= 20 || zoomedIn;
           ele.toggleClass("hide-label", !show);
         }
       });
@@ -611,7 +643,7 @@ export class CitationGraphView {
       .run();
   }
 
-  applyLayout(): void {
+  applyLayout(randomize = false): void {
     const paperNodes = this.cy.nodes(".paper");
     if (paperNodes.length === 0) return;
 
@@ -626,6 +658,7 @@ export class CitationGraphView {
       const seeds = this.cy.nodes(".paper.seed");
       const expanded = this.cy.nodes(".paper.expanded");
       const isPureStar =
+        !randomize &&
         seeds.length === 1 &&
         expanded.length === 0 &&
         paperNodes.length > 8 &&
@@ -641,7 +674,7 @@ export class CitationGraphView {
         .layout({
           name: "breadthfirst",
           directed: true,
-          spacingFactor: 1.65,
+          spacingFactor: 1.75,
           avoidOverlap: true,
           animate: true,
           animationDuration: 380,
@@ -659,7 +692,7 @@ export class CitationGraphView {
           concentric: (node) =>
             node.hasClass("seed") ? 100 : ((node.data("inDegree") as number) ?? 0) * 10 + 1,
           levelWidth: () => 2,
-          minNodeSpacing: 85,
+          minNodeSpacing: 95,
           avoidOverlap: true,
           animate: true,
           animationDuration: 380,
@@ -673,14 +706,17 @@ export class CitationGraphView {
     this.cy
       .layout({
         name: "cose",
+        randomize,
         animate: true,
-        animationDuration: 420,
-        padding: 64,
-        nodeRepulsion: () => 260000,
-        idealEdgeLength: () => 210,
-        nodeOverlap: 60,
-        gravity: 0.22,
-        numIter: 1200,
+        animationDuration: 450,
+        padding: 72,
+        nodeRepulsion: () => 680000,
+        idealEdgeLength: () => 260,
+        edgeElasticity: () => 45,
+        nodeOverlap: 110,
+        componentSpacing: 160,
+        gravity: 0.08,
+        numIter: 1400,
         stop: () => this.updateLabelVisibility(),
       })
       .run();
