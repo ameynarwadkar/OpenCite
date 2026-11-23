@@ -449,7 +449,7 @@ textarea:focus,
   display: inline-block;
 }
 
-.dot-seed { background: var(--primary); }
+.dot-seed { background: #38bdf8; }
 .dot-shared { background: var(--amber); }
 .dot-cited { background: #64748b; }
 .dot-expanded { background: #fff; border: 2.5px solid var(--primary); }

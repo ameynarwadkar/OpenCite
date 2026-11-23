@@ -23,6 +23,7 @@
     edgeColors: new Map(), // "source->target" -> hex color (for non-seed expansions)
     expansionColorByPaper: new Map(), // paperId -> hex color
     expansionColorIdx: 0,
+    primarySeedId: null,
     undoStack: [],
     selectedId: null,
     activeHistoryId: null,
@@ -137,12 +138,24 @@
       {
         selector: "node.paper.seed",
         style: {
-          "background-color": "#4f46e5",
+          "background-color": "#818cf8",
           "font-weight": 700,
           "font-size": 12,
           color: "#0f172a",
           "text-border-color": "#c7d2fe",
           "z-index": 12,
+        },
+      },
+      {
+        selector: "node.paper.primary-seed",
+        style: {
+          "background-color": "#38bdf8",
+          "border-width": 3,
+          "border-color": "#e0f2fe",
+          "font-weight": 700,
+          "font-size": 12.5,
+          "text-border-color": "#7dd3fc",
+          "z-index": 15,
         },
       },
       {
@@ -348,6 +361,7 @@
       state.expansionColorByPaper.delete(oldId);
       state.expansionColorByPaper.set(newId, c);
     }
+    if (state.primarySeedId === oldId) state.primarySeedId = newId;
     if (state.selectedId === oldId) state.selectedId = newId;
   }
 
@@ -416,6 +430,9 @@
       if (!existingId) {
         state.nodes.set(incoming.id, { ...incoming });
         idMap.set(incoming.id, incoming.id);
+        if (incoming.is_seed && !state.primarySeedId) {
+          state.primarySeedId = incoming.id;
+        }
       } else {
         const existing = state.nodes.get(existingId);
         const targetId = idPriority(incoming.id) > idPriority(existing.id) ? incoming.id : existing.id;
@@ -531,8 +548,12 @@
             : 18;
 
         const classes = ["paper"];
-        if (node.is_seed) classes.push("seed");
-        else if (isShared) classes.push("shared");
+        if (node.is_seed) {
+          classes.push("seed");
+          if (id === state.primarySeedId) classes.push("primary-seed");
+        } else if (isShared) {
+          classes.push("shared");
+        }
         if ((node.is_expanded || node.is_cited_by_expanded) && !node.is_seed) {
           classes.push("expanded");
         }
@@ -968,7 +989,13 @@
       .selector("node.paper.seed")
       .style({
         color: isDark ? "#f8fafc" : "#0f172a",
-        "text-border-color": isDark ? "#6366f1" : "#c7d2fe",
+        "text-border-color": isDark ? "#818cf8" : "#c7d2fe",
+      })
+      .selector("node.paper.primary-seed")
+      .style({
+        "background-color": "#38bdf8",
+        "border-color": isDark ? "#bae6fd" : "#0284c7",
+        "text-border-color": isDark ? "#38bdf8" : "#0284c7",
       })
       .selector("node.paper:selected")
       .style({
@@ -1075,6 +1102,7 @@
     state.edgeColors = new Map(item.edgeColors || []);
     state.expansionColorByPaper = new Map(item.expansionColorByPaper || []);
     state.expansionColorIdx = item.expansionColorIdx || state.expansionColorByPaper.size;
+    state.primarySeedId = (item.nodes || []).find((n) => n.is_seed)?.id || null;
     state.undoStack = [];
     state.selectedId = null;
     state.activeHistoryId = item.id;
@@ -1446,6 +1474,7 @@
     state.edgeColors.clear();
     state.expansionColorByPaper.clear();
     state.expansionColorIdx = 0;
+    state.primarySeedId = null;
     state.undoStack = [];
     state.selectedId = null;
     state.activeHistoryId = null;
