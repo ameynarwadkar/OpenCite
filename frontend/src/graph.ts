@@ -23,9 +23,9 @@ export class CitationGraphView {
     this.cy = cytoscape({
       container,
       elements: [],
-      wheelSensitivity: 1.2,
-      minZoom: 0.12,
-      maxZoom: 4,
+      wheelSensitivity: 3.5,
+      minZoom: 0.1,
+      maxZoom: 5,
       style: [
         {
           selector: "node.paper",
