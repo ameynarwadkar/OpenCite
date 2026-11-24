@@ -179,11 +179,21 @@ export class CitationGraphView {
           },
         },
         {
-          selector: "edge.primary-edge",
+          selector: "edge.primary-cites",
           style: {
             width: 2.2,
             "line-color": "#0284c7",
             "target-arrow-color": "#0284c7",
+            opacity: 1,
+            "z-index": 6,
+          },
+        },
+        {
+          selector: "edge.primary-cited-by",
+          style: {
+            width: 2.2,
+            "line-color": "#059669",
+            "target-arrow-color": "#059669",
             opacity: 1,
             "z-index": 6,
           },
@@ -218,6 +228,26 @@ export class CitationGraphView {
             width: 2.2,
             opacity: 1,
             "z-index": 20,
+          },
+        },
+        {
+          selector: "edge.hl-cites",
+          style: {
+            width: 2.4,
+            "line-color": "#0284c7",
+            "target-arrow-color": "#0284c7",
+            opacity: 1,
+            "z-index": 25,
+          },
+        },
+        {
+          selector: "edge.hl-cited-by",
+          style: {
+            width: 2.4,
+            "line-color": "#059669",
+            "target-arrow-color": "#059669",
+            opacity: 1,
+            "z-index": 25,
           },
         },
         {
@@ -291,11 +321,13 @@ export class CitationGraphView {
       const neighborhood = node.closedNeighborhood();
       this.cy.elements(".paper, edge").addClass("dimmed");
       neighborhood.removeClass("dimmed").addClass("highlighted");
+      node.outgoers("edge").addClass("hl-cites");
+      node.incomers("edge").addClass("hl-cited-by");
       node.addClass("hovered");
       callbacks.onHoverNode(node.id(), node.renderedPosition());
     });
     this.cy.on("mouseout", "node.paper", () => {
-      this.cy.elements().removeClass("dimmed highlighted hovered");
+      this.cy.elements().removeClass("dimmed highlighted hovered hl-cites hl-cited-by");
       callbacks.onUnhoverNode();
     });
 
@@ -388,10 +420,25 @@ export class CitationGraphView {
         "line-color": "data(edgeColor)",
         "target-arrow-color": "data(edgeColor)",
       })
-      .selector("edge.primary-edge")
+      .selector("edge.primary-cites")
       .style({
         "line-color": isDark ? "#38bdf8" : "#0284c7",
         "target-arrow-color": isDark ? "#38bdf8" : "#0284c7",
+      })
+      .selector("edge.primary-cited-by")
+      .style({
+        "line-color": isDark ? "#34d399" : "#059669",
+        "target-arrow-color": isDark ? "#34d399" : "#059669",
+      })
+      .selector("edge.hl-cites")
+      .style({
+        "line-color": isDark ? "#38bdf8" : "#0284c7",
+        "target-arrow-color": isDark ? "#38bdf8" : "#0284c7",
+      })
+      .selector("edge.hl-cited-by")
+      .style({
+        "line-color": isDark ? "#34d399" : "#059669",
+        "target-arrow-color": isDark ? "#34d399" : "#059669",
       })
       .update();
   }
@@ -525,14 +572,15 @@ export class CitationGraphView {
           const edgeData: Record<string, unknown> = { id: key, source, target };
           const c = this.store.edgeColors.get(key);
           if (c) edgeData.edgeColor = c;
-          const isPrimary =
-            !c &&
-            this.store.primarySeedId !== null &&
-            (source === this.store.primarySeedId || target === this.store.primarySeedId);
+          let edgeClass = "";
+          if (!c && this.store.primarySeedId !== null) {
+            if (source === this.store.primarySeedId) edgeClass = "primary-cites";
+            else if (target === this.store.primarySeedId) edgeClass = "primary-cited-by";
+          }
           this.cy.add({
             group: "edges",
             data: edgeData,
-            classes: isPrimary ? "primary-edge" : "",
+            classes: edgeClass,
           });
         }
       }

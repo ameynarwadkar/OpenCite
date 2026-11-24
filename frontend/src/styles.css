@@ -999,6 +999,73 @@ textarea:focus,
   background: var(--muted);
 }
 
+.dot-cites {
+  background: #0284c7;
+}
+
+.dot-cited-by {
+  background: #059669;
+}
+
+[data-theme="dark"] .dot-cites {
+  background: #38bdf8;
+}
+
+[data-theme="dark"] .dot-cited-by {
+  background: #34d399;
+}
+
+.legend-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border-strong);
+}
+
+.line-swatch {
+  width: 14px;
+  height: 2.5px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.line-cites {
+  background: #0284c7;
+}
+
+.line-cited-by {
+  background: #059669;
+}
+
+[data-theme="dark"] .line-cites {
+  background: #38bdf8;
+}
+
+[data-theme="dark"] .line-cited-by {
+  background: #34d399;
+}
+
+.label-with-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accent-cites {
+  color: #0284c7;
+}
+
+.accent-cited-by {
+  color: #059669;
+}
+
+[data-theme="dark"] .accent-cites {
+  color: #38bdf8;
+}
+
+[data-theme="dark"] .accent-cited-by {
+  color: #34d399;
+}
+
 /* Right Inspector (340px default, resizable, sticky header + tabs) */
 .right-inspector {
   width: 340px;

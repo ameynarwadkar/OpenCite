@@ -223,6 +223,9 @@
           <span class="legend-item"><i class="dot dot-seed"></i>Source</span>
           <span class="legend-item"><i class="dot dot-shared"></i>Shared</span>
           <span class="legend-item"><i class="dot dot-cited"></i>Cited</span>
+          <span class="legend-sep"></span>
+          <span class="legend-item"><i class="line-swatch line-cites"></i>Cites</span>
+          <span class="legend-item"><i class="line-swatch line-cited-by"></i>Cited by</span>
         </div>
       </main>
 
@@ -281,18 +284,18 @@
             <!-- Tab: Connections -->
             <div id="tab-panel-connections" class="insp-tab-panel hidden">
               <div class="mini-stats">
-                <div class="mini-stat"><strong id="conn-cites-count">0</strong><span>Cites</span></div>
-                <div class="mini-stat"><strong id="conn-citedby-count">0</strong><span>Cited by</span></div>
+                <div class="mini-stat"><strong id="conn-cites-count" class="accent-cites">0</strong><span>Cites</span></div>
+                <div class="mini-stat"><strong id="conn-citedby-count" class="accent-cited-by">0</strong><span>Cited by</span></div>
                 <div class="mini-stat"><strong id="conn-shared-count">0</strong><span>Shared</span></div>
               </div>
 
               <div id="insp-cites-section" class="insp-block hidden">
-                <span class="label">Cites (in graph)</span>
+                <span class="label label-with-dot"><i class="dot dot-cites"></i>Cites (in graph)</span>
                 <ul id="insp-cites" class="paper-list"></ul>
               </div>
 
               <div id="insp-cited-by-section" class="insp-block hidden">
-                <span class="label">Cited by (in graph)</span>
+                <span class="label label-with-dot"><i class="dot dot-cited-by"></i>Cited by (in graph)</span>
                 <ul id="insp-cited-by" class="paper-list"></ul>
               </div>
 
