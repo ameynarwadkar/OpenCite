@@ -248,6 +248,7 @@ class GraphBuilder:
             is_seed=existing.is_seed or normalized.is_seed,
             is_expanded=existing.is_expanded or normalized.is_expanded,
             is_cited_by_expanded=existing.is_cited_by_expanded or normalized.is_cited_by_expanded,
+            is_retracted=existing.is_retracted or normalized.is_retracted,
             expandable=existing.expandable or normalized.expandable,
         )
 

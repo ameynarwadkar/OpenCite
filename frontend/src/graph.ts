@@ -125,6 +125,15 @@ export class CitationGraphView {
           },
         },
         {
+          selector: "node.paper.retracted",
+          style: {
+            "border-width": 4,
+            "border-color": "#ef4444",
+            "text-border-color": "#ef4444",
+            "z-index": 25,
+          },
+        },
+        {
           selector: "node.paper:selected",
           style: {
             label: "data(fullLabel)",
@@ -400,6 +409,11 @@ export class CitationGraphView {
       .style({
         "border-color": "data(expansionColor)",
       })
+      .selector("node.paper.retracted")
+      .style({
+        "border-color": "#ef4444",
+        "text-border-color": "#ef4444",
+      })
       .selector("node.paper:selected")
       .style({
         "border-color": isDark ? "#fafafa" : "#09090b",
@@ -554,6 +568,9 @@ export class CitationGraphView {
         }
         if ((node.is_expanded || node.is_cited_by_expanded) && !node.is_seed) {
           classes.push("expanded");
+        }
+        if (node.is_retracted) {
+          classes.push("retracted");
         }
 
         const fullLabel = formatFullLabel(node);

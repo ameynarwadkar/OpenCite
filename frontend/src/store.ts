@@ -478,6 +478,7 @@ export class GraphStore {
           is_cited_by_expanded: Boolean(
             existing.is_cited_by_expanded || incoming.is_cited_by_expanded
           ),
+          is_retracted: Boolean(existing.is_retracted || incoming.is_retracted),
           expandable: Boolean(existing.expandable || incoming.expandable),
         };
         if (targetId !== existingId) {

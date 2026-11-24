@@ -100,6 +100,7 @@ const emptyState = byId<HTMLDivElement>("empty-state");
 const loadingOverlay = byId<HTMLDivElement>("loading-overlay");
 const loadingText = byId<HTMLSpanElement>("loading-text");
 const hoverTooltip = byId<HTMLDivElement>("hover-tooltip");
+const legendRetracted = byId<HTMLSpanElement>("legend-retracted");
 
 // Discover view
 const discoverPanel = byId<HTMLElement>("discover-panel");
@@ -404,6 +405,13 @@ function renderDiscover(): void {
 
     card.appendChild(top);
     card.appendChild(title);
+    if (entry.node.is_retracted) {
+      const retBadge = document.createElement("span");
+      retBadge.className = "badge badge-danger";
+      retBadge.style.alignSelf = "flex-start";
+      retBadge.textContent = "Retracted";
+      card.appendChild(retBadge);
+    }
     if (entry.totalSeeds >= 2 && entry.connectedSeedCount >= 2) {
       const bridgeBadge = document.createElement("span");
       bridgeBadge.className = "discover-bridge-pill";
@@ -458,6 +466,7 @@ function updateStatsAndSeeds(): void {
   let seeds = 0;
   let shared = 0;
   let unknownYears = 0;
+  let retractedCount = 0;
   const seedNodes: PaperNode[] = [];
 
   for (const [id, node] of store.nodes.entries()) {
@@ -468,7 +477,10 @@ function updateStatsAndSeeds(): void {
       shared += 1;
     }
     if (!node.year) unknownYears += 1;
+    if (node.is_retracted) retractedCount += 1;
   }
+
+  legendRetracted.classList.toggle("hidden", retractedCount === 0);
 
   statSeeds.textContent = String(seeds);
   statNodes.textContent = String(store.nodes.size);
@@ -689,6 +701,7 @@ function openInspector(nodeId: string): void {
   inspContent.classList.remove("hidden");
 
   inspBadges.innerHTML = "";
+  if (node.is_retracted) inspBadges.innerHTML += `<span class="badge badge-danger">Retracted</span>`;
   if (node.is_seed) inspBadges.innerHTML += `<span class="badge">Source</span>`;
   if (inDeg >= 2) inspBadges.innerHTML += `<span class="badge">Shared · ${inDeg}</span>`;
   if (node.is_expanded) inspBadges.innerHTML += `<span class="badge">Older</span>`;
@@ -774,6 +787,9 @@ function openInspector(nodeId: string): void {
 
   // Tab 3: Insights
   const reasons: string[] = [];
+  if (node.is_retracted) {
+    reasons.push("Marked as retracted in OpenAlex — verify claims and retraction notice before citing.");
+  }
   if (node.is_seed) {
     reasons.push("Seed paper directly loaded into your workspace.");
   }
@@ -868,6 +884,7 @@ async function lazyLoadPaperDetails(nodeId: string): Promise<void> {
         if (!target.openalex_id && upd.node.openalex_id) target.openalex_id = upd.node.openalex_id;
         if (!target.venue && upd.node.venue) target.venue = upd.node.venue;
         if (!target.year && upd.node.year) target.year = upd.node.year;
+        if (upd.node.is_retracted) target.is_retracted = true;
         if (target.authors.length === 0 && upd.node.authors.length > 0) {
           target.authors = upd.node.authors;
         }

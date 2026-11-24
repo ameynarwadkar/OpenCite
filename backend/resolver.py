@@ -23,7 +23,7 @@ ARXIV_API = "https://export.arxiv.org/api/query"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 USER_AGENT = "citation-graph/0.1 (mailto:citation-graph@local.dev)"
 WORK_SELECT_FIELDS = (
-    "id,doi,ids,title,publication_year,cited_by_count,abstract_inverted_index,topics,authorships,primary_location,referenced_works"
+    "id,doi,ids,title,publication_year,cited_by_count,is_retracted,abstract_inverted_index,topics,authorships,primary_location,referenced_works"
 )
 MAX_REFERENCES_PER_PAPER = 200
 BATCH_SIZE = 50
@@ -150,6 +150,7 @@ def openalex_work_to_node(
         cited_by_count=cited_by_count,
         is_seed=is_seed,
         is_expanded=is_expanded,
+        is_retracted=bool(work.get("is_retracted")),
         expandable=True,
     )
 

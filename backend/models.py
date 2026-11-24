@@ -21,6 +21,7 @@ class PaperNode(BaseModel):
     is_seed: bool = False
     is_expanded: bool = False
     is_cited_by_expanded: bool = False
+    is_retracted: bool = False
     expandable: bool = True
 
 

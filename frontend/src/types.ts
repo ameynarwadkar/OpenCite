@@ -16,6 +16,7 @@ export interface PaperNode {
   is_seed: boolean;
   is_expanded: boolean;
   is_cited_by_expanded: boolean;
+  is_retracted?: boolean;
   expandable: boolean;
 }
 

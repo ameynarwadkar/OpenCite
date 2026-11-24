@@ -38,6 +38,11 @@ def test_reconstruct_abstract_and_topics():
     node = openalex_work_to_node(work)
     assert node.abstract == "Attention is all you need."
     assert node.topics == ["Natural Language Processing", "Machine Translation"]
+    assert node.is_retracted is False
+
+    retracted_work = {**work, "is_retracted": True}
+    retracted_node = openalex_work_to_node(retracted_work)
+    assert retracted_node.is_retracted is True
 
 
 def test_openalex_work_to_node():

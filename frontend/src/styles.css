@@ -999,6 +999,11 @@ textarea:focus,
   background: var(--muted);
 }
 
+.dot-retracted {
+  background: transparent;
+  border: 2px solid #ef4444;
+}
+
 .dot-cites {
   background: #0284c7;
 }
@@ -1274,6 +1279,13 @@ textarea:focus,
   border: 1px solid var(--border);
   color: var(--text);
   background: var(--surface-subtle);
+}
+
+.badge-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-weight: 600;
 }
 
 .meta-grid {
