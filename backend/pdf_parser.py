@@ -489,10 +489,23 @@ def parse_pdf_bytes(data: bytes, filename: str = "paper.pdf") -> ParsedPdfPaper:
         seed_arxiv = _extract_arxiv_id(first_page_header)
         seed_abstract = _extract_abstract_from_first_page(pages_text[0])
 
-        seed_year = _extract_year(first_page_header)
-        if seed_year is None and seed_arxiv and re.match(r"^\d{4}\.", seed_arxiv):
-            yy = int(seed_arxiv[:2])
-            seed_year = 2000 + yy if yy < 50 else 1900 + yy
+        # Prefer authoritative arXiv ID year first; never let in-text citations like
+        # "(Vaswani et al., 2017)" in the abstract/intro override the paper's own year.
+        seed_year = _infer_year_from_arxiv(seed_arxiv)
+        if seed_year is None:
+            # Only scan header lines before "Abstract" / "Introduction" for a printed year
+            pre_abstract_lines: list[str] = []
+            for line in pre_ref_lines:
+                if re.match(r"^\s*(?:abstract|1\.?\s+introduction)\b", line, re.IGNORECASE):
+                    break
+                pre_abstract_lines.append(line)
+            header_only = "\n".join(pre_abstract_lines)[:500]
+            seed_year = _extract_year(header_only)
+        if seed_year is None:
+            meta_date = (doc.metadata.get("creationDate") or doc.metadata.get("modDate") or "").strip()
+            m_date = re.search(r"D:((?:19|20)\d{2})", meta_date)
+            if m_date:
+                seed_year = int(m_date.group(1))
 
         ref_lines = _locate_references_lines(pages_text)
         warnings: list[str] = []

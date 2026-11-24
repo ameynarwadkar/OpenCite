@@ -176,6 +176,24 @@ def test_multiline_author_list_is_not_split_into_orphan_node():
     assert "BERT: Pre-training of Deep Bidirectional Transformers" in parsed.references[1].title
 
 
+def test_in_text_citation_year_in_abstract_does_not_override_seed_year():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 70, "Trustworthy and Efficient LLMs Meet Databases", 18),
+                (72, 95, "arXiv:2412.18022v1  24 Dec 2024", 10),
+                (72, 120, "Abstract", 12),
+                (72, 140, "Transformers (Vaswani et al., 2017) revolutionized NLP and databases.", 10),
+                (72, 190, "References", 12),
+                (72, 215, "[1] Vaswani, A. \"Attention Is All You Need.\" NeurIPS, 2017.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "2412.18022.pdf")
+    assert parsed.year == 2024
+    assert parsed.arxiv_id == "2412.18022"
+
+
 def test_invalid_and_empty_pdf_raise():
     with pytest.raises(PDFParseError):
         parse_pdf_bytes(b"not a pdf", "bad.pdf")

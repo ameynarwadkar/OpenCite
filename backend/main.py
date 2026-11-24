@@ -112,9 +112,13 @@ async def ingest_pdfs(
     gb = GraphBuilder()
     for paper in parsed_papers:
         seed_key = _lookup_key_for_doi_enrichment(paper.doi, paper.arxiv_id)
-        if seed_key and seed_key in enriched_by_doi:
+        seed_work = enriched_by_doi.get(seed_key) if seed_key else None
+        if seed_work is None and paper.title:
+            seed_work = await resolver.resolve_by_title(paper.title, year=paper.year)
+
+        if seed_work is not None:
             seed_node = openalex_work_to_node(
-                enriched_by_doi[seed_key], is_seed=True, is_expanded=True
+                seed_work, is_seed=True, is_expanded=True
             )
             if not seed_node.abstract and paper.abstract:
                 seed_node = seed_node.model_copy(update={"abstract": paper.abstract})
