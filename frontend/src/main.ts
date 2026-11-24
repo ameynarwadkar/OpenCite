@@ -3,6 +3,7 @@ import {
   apiEnrichNodes,
   apiExpandCitedBy,
   apiExpandReferences,
+  apiFetchPaperDetails,
   apiFindCrossCitations,
   apiLookupIdentifiers,
   apiUploadPdfs,
@@ -163,6 +164,7 @@ const statEdges = byId<HTMLElement>("stat-edges");
 const statusBarMsg = byId<HTMLDivElement>("status-bar-msg");
 
 const store = new GraphStore();
+const detailsAttemptedIds = new Set<string>();
 let pathStartId: string | null = null;
 let pathActive = false;
 let discoverOpen = false;
@@ -707,6 +709,10 @@ function openInspector(nodeId: string): void {
   if (node.abstract) {
     inspAbstract.textContent = node.abstract;
     inspAbstract.classList.remove("muted");
+  } else if (!detailsAttemptedIds.has(nodeId) && node.expandable) {
+    inspAbstract.textContent = "Fetching abstract...";
+    inspAbstract.classList.add("muted");
+    void lazyLoadPaperDetails(nodeId);
   } else {
     inspAbstract.textContent = "No abstract indexed for this paper.";
     inspAbstract.classList.add("muted");
@@ -815,6 +821,44 @@ function openInspector(nodeId: string): void {
   if (!panelState.rightOpen) {
     panelState.rightOpen = true;
     applyPanelLayout();
+  }
+}
+
+async function lazyLoadPaperDetails(nodeId: string): Promise<void> {
+  if (detailsAttemptedIds.has(nodeId)) return;
+  detailsAttemptedIds.add(nodeId);
+  const existing = store.nodes.get(nodeId);
+  if (!existing || existing.abstract) return;
+
+  try {
+    const upd = await apiFetchPaperDetails(existing);
+    if (upd && upd.node) {
+      const target = store.nodes.get(nodeId);
+      if (target) {
+        if (upd.node.abstract) target.abstract = upd.node.abstract;
+        if ((upd.node.topics?.length ?? 0) > (target.topics?.length ?? 0)) {
+          target.topics = upd.node.topics;
+        }
+        if (target.cited_by_count === null && upd.node.cited_by_count !== null) {
+          target.cited_by_count = upd.node.cited_by_count;
+        }
+        if (!target.doi && upd.node.doi) target.doi = upd.node.doi;
+        if (!target.arxiv_id && upd.node.arxiv_id) target.arxiv_id = upd.node.arxiv_id;
+        if (!target.openalex_id && upd.node.openalex_id) target.openalex_id = upd.node.openalex_id;
+        if (!target.venue && upd.node.venue) target.venue = upd.node.venue;
+        if (!target.year && upd.node.year) target.year = upd.node.year;
+        if (target.authors.length === 0 && upd.node.authors.length > 0) {
+          target.authors = upd.node.authors;
+        }
+        store.saveHistory(layoutSelect.value as LayoutMode);
+      }
+    }
+  } catch {
+    // Ignore transient network errors
+  }
+
+  if (store.selectedId === nodeId) {
+    openInspector(nodeId);
   }
 }
 

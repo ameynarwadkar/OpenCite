@@ -12,6 +12,7 @@ from backend.models import (
     CitationEdge,
     CrossCitationsRequest,
     CrossCitationsResponse,
+    EnrichNodeInput,
     EnrichRequest,
     EnrichResponse,
     EnrichUpdate,
@@ -115,6 +116,8 @@ async def ingest_pdfs(
             seed_node = openalex_work_to_node(
                 enriched_by_doi[seed_key], is_seed=True, is_expanded=True
             )
+            if not seed_node.abstract and paper.abstract:
+                seed_node = seed_node.model_copy(update={"abstract": paper.abstract})
         else:
             seed_node = PaperNode(
                 id="tmp",
@@ -123,6 +126,7 @@ async def ingest_pdfs(
                 year=paper.year,
                 doi=paper.doi,
                 arxiv_id=paper.arxiv_id,
+                abstract=paper.abstract,
                 is_seed=True,
                 is_expanded=True,
             )
@@ -443,3 +447,22 @@ async def find_cross_citations(
 
     edges = [CitationEdge(source=s, target=t) for s, t in sorted(edge_set)]
     return CrossCitationsResponse(edges=edges, updates=updates, warnings=warnings)
+
+
+@app.post("/api/papers/details", response_model=EnrichUpdate | None)
+async def fetch_paper_details_route(
+    node: EnrichNodeInput,
+    resolver: PaperResolver = Depends(get_resolver),
+) -> EnrichUpdate | None:
+    """On-demand detail lookup (abstract, topics, global citations) for a clicked paper."""
+    enriched = await resolver.fetch_paper_details(
+        title=node.title,
+        year=node.year,
+        doi=node.doi,
+        arxiv_id=node.arxiv_id,
+        openalex_id=node.openalex_id,
+        raw_citation=node.raw_citation,
+    )
+    if enriched is None:
+        return None
+    return EnrichUpdate(old_id=node.id, node=enriched)

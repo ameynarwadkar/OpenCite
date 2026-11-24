@@ -61,6 +61,7 @@ class ParsedPdfPaper:
     year: int | None = None
     doi: str | None = None
     arxiv_id: str | None = None
+    abstract: str | None = None
     references: list[ParsedReference] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -436,6 +437,21 @@ def _split_reference_entries(ref_lines: list[str]) -> list[str]:
     return [line.strip() for line in non_empty if len(line.strip()) >= 25]
 
 
+def _extract_abstract_from_first_page(text: str) -> str | None:
+    """Extract the Abstract section from page 1 text if present."""
+    match = re.search(
+        r"(?:^|\n)\s*abstract\s*[:.\-]?\s*\n?(.*?)(?=\n\s*(?:1\.?\s+introduction|i\.?\s+introduction|keywords|index\s+terms|ccs\s+concepts|\d+\.?\s+[A-Z]))",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    cleaned = _clean_ref_text(match.group(1))
+    if 40 <= len(cleaned) <= 3000:
+        return cleaned
+    return None
+
+
 def parse_pdf_bytes(data: bytes, filename: str = "paper.pdf") -> ParsedPdfPaper:
     """Parse a PDF's seed metadata and References section into structured data."""
     try:
@@ -471,6 +487,7 @@ def parse_pdf_bytes(data: bytes, filename: str = "paper.pdf") -> ParsedPdfPaper:
         first_page_header = "\n".join(pre_ref_lines)[:1500]
         seed_doi = _extract_doi(first_page_header)
         seed_arxiv = _extract_arxiv_id(first_page_header)
+        seed_abstract = _extract_abstract_from_first_page(pages_text[0])
 
         seed_year = _extract_year(first_page_header)
         if seed_year is None and seed_arxiv and re.match(r"^\d{4}\.", seed_arxiv):
@@ -488,6 +505,7 @@ def parse_pdf_bytes(data: bytes, filename: str = "paper.pdf") -> ParsedPdfPaper:
                 year=seed_year,
                 doi=seed_doi,
                 arxiv_id=seed_arxiv,
+                abstract=seed_abstract,
                 references=[],
                 warnings=warnings,
             )
@@ -504,6 +522,7 @@ def parse_pdf_bytes(data: bytes, filename: str = "paper.pdf") -> ParsedPdfPaper:
             year=seed_year,
             doi=seed_doi,
             arxiv_id=seed_arxiv,
+            abstract=seed_abstract,
             references=parsed_refs,
             warnings=warnings,
         )

@@ -20,6 +20,7 @@ from backend.models import PaperNode
 OPENALEX_API = "https://api.openalex.org"
 CROSSREF_API = "https://api.crossref.org/works"
 ARXIV_API = "https://export.arxiv.org/api/query"
+SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 USER_AGENT = "citation-graph/0.1 (mailto:citation-graph@local.dev)"
 WORK_SELECT_FIELDS = (
     "id,doi,ids,title,publication_year,cited_by_count,abstract_inverted_index,topics,authorships,primary_location,referenced_works"
@@ -615,3 +616,136 @@ class PaperResolver:
         if cr_node is not None and (cr_node.year is not None or cr_node.doi):
             return cr_node
         return None
+
+    async def _fetch_arxiv_abstract(
+        self, client: httpx.AsyncClient, arxiv_id: str
+    ) -> str | None:
+        try:
+            resp = await client.get(ARXIV_API, params={"id_list": arxiv_id})
+            if resp.status_code != 200:
+                return None
+            root = ET.fromstring(resp.text)
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            entry = root.find("atom:entry", ns)
+            if entry is None:
+                return None
+            summary = entry.findtext("atom:summary", default="", namespaces=ns)
+            cleaned = re.sub(r"\s+", " ", summary).strip()
+            return cleaned if len(cleaned) >= 30 else None
+        except Exception:
+            return None
+
+    async def _fetch_semantic_scholar_abstract(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        doi: str | None = None,
+        arxiv_id: str | None = None,
+        title: str | None = None,
+    ) -> tuple[str | None, int | None]:
+        """Fetch abstract (and citationCount) from Semantic Scholar's public Graph API."""
+        fields = "title,abstract,citationCount"
+        for paper_key in (
+            f"DOI:{doi}" if doi else None,
+            f"ARXIV:{arxiv_id}" if arxiv_id else None,
+        ):
+            if not paper_key:
+                continue
+            data = await self._get_json(
+                client,
+                f"{SEMANTIC_SCHOLAR_API}/paper/{paper_key}",
+                params={"fields": fields},
+            )
+            if data and isinstance(data.get("abstract"), str) and len(data["abstract"].strip()) >= 30:
+                cites = data.get("citationCount")
+                return data["abstract"].strip(), cites if isinstance(cites, int) else None
+
+        if title and len(title.strip()) >= 8:
+            data = await self._get_json(
+                client,
+                f"{SEMANTIC_SCHOLAR_API}/paper/search",
+                params={"query": title.strip()[:200], "limit": 3, "fields": fields},
+            )
+            for item in (data or {}).get("data") or []:
+                if not isinstance(item, dict):
+                    continue
+                cand_title = str(item.get("title") or "")
+                if _title_similarity(title, cand_title) >= 0.72:
+                    abs_txt = item.get("abstract")
+                    if isinstance(abs_txt, str) and len(abs_txt.strip()) >= 30:
+                        cites = item.get("citationCount")
+                        return abs_txt.strip(), cites if isinstance(cites, int) else None
+        return None, None
+
+    async def fetch_paper_details(
+        self,
+        *,
+        title: str | None = None,
+        year: int | None = None,
+        doi: str | None = None,
+        arxiv_id: str | None = None,
+        openalex_id: str | None = None,
+        raw_citation: str | None = None,
+    ) -> PaperNode | None:
+        """On-demand detail fetch (abstract, topics, citations) via OpenAlex -> arXiv -> Semantic Scholar."""
+        node = await self.enrich_node(
+            title=title,
+            year=year,
+            doi=doi,
+            arxiv_id=arxiv_id,
+            openalex_id=openalex_id,
+            raw_citation=raw_citation,
+        )
+
+        eff_doi = (node.doi if node else None) or normalize_doi(doi)
+        eff_arxiv = (node.arxiv_id if node else None) or normalize_arxiv_id(arxiv_id)
+        eff_title = (node.title if node else None) or title
+
+        if node and node.abstract:
+            return node
+
+        client, should_close = self._get_client()
+        try:
+            abstract: str | None = None
+            s2_cites: int | None = None
+
+            if eff_arxiv:
+                abstract = await self._fetch_arxiv_abstract(client, eff_arxiv)
+
+            if not abstract:
+                abstract, s2_cites = await self._fetch_semantic_scholar_abstract(
+                    client, doi=eff_doi, arxiv_id=eff_arxiv, title=eff_title
+                )
+
+            if node is not None:
+                updates: dict = {}
+                if abstract:
+                    updates["abstract"] = abstract
+                if node.cited_by_count is None and s2_cites is not None:
+                    updates["cited_by_count"] = s2_cites
+                return node.model_copy(update=updates) if updates else node
+
+            if abstract:
+                return PaperNode(
+                    id=make_canonical_id(
+                        doi=eff_doi,
+                        arxiv_id=eff_arxiv,
+                        openalex_id=openalex_id,
+                        title=eff_title,
+                        year=year,
+                        raw_citation=raw_citation,
+                    ),
+                    title=eff_title or "Untitled Paper",
+                    year=year,
+                    doi=eff_doi,
+                    arxiv_id=eff_arxiv,
+                    openalex_id=normalize_openalex_id(openalex_id),
+                    url=build_default_url(eff_doi, eff_arxiv, normalize_openalex_id(openalex_id)),
+                    abstract=abstract,
+                    cited_by_count=s2_cites,
+                    raw_citation=raw_citation,
+                )
+            return None
+        finally:
+            if should_close:
+                await client.aclose()

@@ -1,6 +1,7 @@
 import type {
   CrossCitationsResponse,
   EnrichResponse,
+  EnrichUpdate,
   ExpandResponse,
   GraphPayload,
   PaperNode,
@@ -108,4 +109,23 @@ export async function apiFindCrossCitations(
     }),
   });
   return parseJsonOrThrow<CrossCitationsResponse>(resp, "Cross-citation lookup failed.");
+}
+
+export async function apiFetchPaperDetails(node: PaperNode): Promise<EnrichUpdate | null> {
+  const resp = await fetch("/api/papers/details", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: node.id,
+      title: node.title,
+      year: node.year,
+      doi: node.doi,
+      arxiv_id: node.arxiv_id,
+      openalex_id: node.openalex_id,
+      raw_citation: node.raw_citation,
+    }),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json().catch(() => null);
+  return data as EnrichUpdate | null;
 }
