@@ -169,6 +169,16 @@ export class CitationGraphView {
           },
         },
         {
+          selector: "edge.primary-edge",
+          style: {
+            width: 1.65,
+            "line-color": "#0ea5e9",
+            "target-arrow-color": "#0ea5e9",
+            opacity: 0.82,
+            "z-index": 4,
+          },
+        },
+        {
           selector: "edge[edgeColor]",
           style: {
             width: 1.85,
@@ -373,6 +383,11 @@ export class CitationGraphView {
         "line-color": isDark ? "#3f3f46" : "#d4d4d8",
         "target-arrow-color": isDark ? "#52525b" : "#a1a1aa",
       })
+      .selector("edge.primary-edge")
+      .style({
+        "line-color": isDark ? "#38bdf8" : "#0ea5e9",
+        "target-arrow-color": isDark ? "#38bdf8" : "#0ea5e9",
+      })
       .selector("edge[edgeColor]")
       .style({
         "line-color": "data(edgeColor)",
@@ -510,7 +525,15 @@ export class CitationGraphView {
           const edgeData: Record<string, unknown> = { id: key, source, target };
           const c = this.store.edgeColors.get(key);
           if (c) edgeData.edgeColor = c;
-          this.cy.add({ group: "edges", data: edgeData });
+          const isPrimary =
+            !c &&
+            this.store.primarySeedId !== null &&
+            (source === this.store.primarySeedId || target === this.store.primarySeedId);
+          this.cy.add({
+            group: "edges",
+            data: edgeData,
+            classes: isPrimary ? "primary-edge" : "",
+          });
         }
       }
     });
