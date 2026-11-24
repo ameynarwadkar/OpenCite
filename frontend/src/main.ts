@@ -385,8 +385,8 @@ function renderDiscover(): void {
     card.className = "discover-card";
     card.addEventListener("click", () => {
       setDiscoverOpen(false);
-      graphView.focusNode(entry.node.id);
       openInspector(entry.node.id);
+      graphView.focusNode(entry.node.id, true);
     });
 
     const top = document.createElement("div");
@@ -616,6 +616,7 @@ function handleNodeSelected(nodeId: string): void {
     return;
   }
   openInspector(nodeId);
+  graphView.focusNode(nodeId, true);
 }
 
 function renderAll(): void {
@@ -694,8 +695,8 @@ function renderPaperJumpList(
     btn.type = "button";
     btn.textContent = suffix ? `${formatFullLabel(node)} · ${suffix}` : formatFullLabel(node);
     btn.addEventListener("click", () => {
-      graphView.focusNode(node.id);
       openInspector(node.id);
+      graphView.focusNode(node.id, true);
     });
     li.appendChild(btn);
     listEl.appendChild(li);
@@ -936,6 +937,7 @@ async function lazyLoadPaperDetails(nodeId: string): Promise<void> {
 
 function closeInspector(): void {
   store.selectedId = null;
+  graphView.clearNodeFocus();
   if (panelState.rightOpen) {
     panelState.rightOpen = false;
     applyPanelLayout();

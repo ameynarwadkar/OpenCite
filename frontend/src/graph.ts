@@ -23,6 +23,7 @@ export class CitationGraphView {
   private layoutMode: LayoutMode = "cose";
   private dragLastPos: { x: number; y: number } | null = null;
   private dragNeighbors: cytoscape.NodeCollection | null = null;
+  private focusedNodeId: string | null = null;
 
   constructor(
     container: HTMLElement,
@@ -329,16 +330,23 @@ export class CitationGraphView {
 
     this.cy.on("mouseover", "node.paper", (evt) => {
       const node = evt.target as NodeSingular;
-      const neighborhood = node.closedNeighborhood();
-      this.cy.elements(".paper, edge").addClass("dimmed");
-      neighborhood.removeClass("dimmed").addClass("highlighted");
-      node.outgoers("edge").addClass("hl-cites");
-      node.incomers("edge").addClass("hl-cited-by");
+      this.applyNeighborhoodHighlight(node);
       node.addClass("hovered");
       callbacks.onHoverNode(node.id(), node.renderedPosition());
     });
     this.cy.on("mouseout", "node.paper", () => {
-      this.cy.elements().removeClass("dimmed highlighted hovered hl-cites hl-cited-by");
+      this.cy.elements().removeClass("hovered");
+      if (this.focusedNodeId) {
+        const focused = this.cy.getElementById(this.focusedNodeId) as NodeSingular;
+        if (focused.nonempty()) {
+          this.applyNeighborhoodHighlight(focused);
+        } else {
+          this.focusedNodeId = null;
+          this.cy.elements().removeClass("dimmed highlighted hl-cites hl-cited-by");
+        }
+      } else {
+        this.cy.elements().removeClass("dimmed highlighted hl-cites hl-cited-by");
+      }
       callbacks.onUnhoverNode();
     });
 
@@ -639,6 +647,15 @@ export class CitationGraphView {
 
     this.applyLayout();
     this.applySearchHighlight(searchQuery);
+    if (this.focusedNodeId) {
+      const focused = this.cy.getElementById(this.focusedNodeId) as NodeSingular;
+      if (focused.nonempty()) {
+        focused.select();
+        this.applyNeighborhoodHighlight(focused);
+      } else {
+        this.focusedNodeId = null;
+      }
+    }
   }
 
   updateLabelVisibility(): void {
@@ -791,13 +808,39 @@ export class CitationGraphView {
     });
   }
 
-  focusNode(nodeId: string): void {
-    const ele = this.cy.getElementById(nodeId);
-    if (ele.nonempty()) {
-      this.cy.elements().unselect();
-      ele.select();
-      this.cy.animate({ center: { eles: ele } }, { duration: 240 });
+  private applyNeighborhoodHighlight(node: NodeSingular): void {
+    const neighborhood = node.closedNeighborhood();
+    this.cy.batch(() => {
+      this.cy.elements().removeClass("dimmed highlighted hovered hl-cites hl-cited-by");
+      this.cy.elements(".paper, edge").addClass("dimmed");
+      neighborhood.removeClass("dimmed").addClass("highlighted");
+      node.outgoers("edge").addClass("hl-cites");
+      node.incomers("edge").addClass("hl-cited-by");
+    });
+  }
+
+  focusNode(nodeId: string, animateCamera = true): void {
+    const ele = this.cy.getElementById(nodeId) as NodeSingular;
+    if (ele.empty()) return;
+    this.focusedNodeId = nodeId;
+    this.cy.elements().unselect();
+    ele.select();
+    this.applyNeighborhoodHighlight(ele);
+    if (!animateCamera) return;
+
+    this.cy.resize();
+    const neighborhood = ele.closedNeighborhood().filter((e) => !e.hasClass("ego-hidden"));
+    if (neighborhood.nodes().length <= 1) {
+      this.cy.animate({ center: { eles: ele } }, { duration: 260 });
+    } else {
+      this.cy.animate({ fit: { eles: neighborhood, padding: 84 } }, { duration: 280 });
     }
+  }
+
+  clearNodeFocus(): void {
+    this.focusedNodeId = null;
+    this.cy.elements().unselect();
+    this.cy.elements().removeClass("dimmed highlighted hovered hl-cites hl-cited-by");
   }
 
   fit(): void {
