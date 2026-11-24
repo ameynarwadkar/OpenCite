@@ -217,6 +217,11 @@ class GraphBuilder:
         ):
             best_title = normalized.title
 
+        merged_contexts = list(existing.citation_contexts)
+        for ctx in normalized.citation_contexts:
+            if ctx not in merged_contexts and len(merged_contexts) < 5:
+                merged_contexts.append(ctx)
+
         merged = PaperNode(
             id=target_id,
             title=best_title,
@@ -232,6 +237,7 @@ class GraphBuilder:
                 existing.openalex_id or normalized.openalex_id,
             ),
             raw_citation=existing.raw_citation or normalized.raw_citation,
+            citation_contexts=merged_contexts,
             abstract=existing.abstract or normalized.abstract,
             topics=existing.topics if len(existing.topics) >= len(normalized.topics) else normalized.topics,
             cited_by_count=(

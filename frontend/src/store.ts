@@ -464,6 +464,9 @@ export class GraphStore {
           openalex_id: existing.openalex_id ?? incoming.openalex_id,
           url: existing.url ?? incoming.url,
           raw_citation: existing.raw_citation ?? incoming.raw_citation,
+          citation_contexts: Array.from(
+            new Set([...(existing.citation_contexts ?? []), ...(incoming.citation_contexts ?? [])])
+          ).slice(0, 5),
           abstract: existing.abstract ?? incoming.abstract ?? null,
           topics:
             (existing.topics?.length ?? 0) >= (incoming.topics?.length ?? 0)

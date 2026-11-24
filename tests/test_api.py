@@ -264,6 +264,40 @@ def test_cross_citations_endpoint_connects_references():
         app.dependency_overrides.clear()
 
 
+def test_bib_upload_endpoint():
+    resolver = _make_mock_resolver()
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+        bib_content = b"""
+        @inproceedings{vaswani2017attention,
+          title = {Attention Is All You Need},
+          author = {Vaswani, Ashish and Shazeer, Noam},
+          booktitle = {NeurIPS},
+          year = {2017},
+          eprint = {1706.03762}
+        }
+        @article{local2023demo,
+          title = {A Local BibTeX Entry Without DOI},
+          author = {Jane Doe},
+          journal = {Workshop},
+          year = {2023}
+        }
+        """
+        resp = client.post(
+            "/api/papers/bib",
+            files=[("files", ("myrefs.bib", bib_content, "text/plain"))],
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["nodes"]) == 3
+        assert len(data["edges"]) == 2
+        ids = {n["id"] for n in data["nodes"]}
+        assert "doi:10.48550/arxiv.1706.03762" in ids
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_serves_frontend_index_and_static_assets():
     client = TestClient(app)
     index_resp = client.get("/")

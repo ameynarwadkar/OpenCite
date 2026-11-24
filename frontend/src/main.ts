@@ -6,6 +6,7 @@ import {
   apiFetchPaperDetails,
   apiFindCrossCitations,
   apiLookupIdentifiers,
+  apiUploadBibs,
   apiUploadPdfs,
 } from "./api";
 import { enhanceSelect, type CustomDropdown } from "./dropdown";
@@ -48,6 +49,7 @@ const toggleRightBtn = byId<HTMLButtonElement>("toggle-right-btn");
 const tabWorkspaceBtn = byId<HTMLButtonElement>("tab-workspace-btn");
 const tabDiscoverBtn = byId<HTMLButtonElement>("tab-discover-btn");
 const themeToggle = byId<HTMLButtonElement>("theme-toggle");
+const exportPngBtn = byId<HTMLButtonElement>("export-png-btn");
 const exportBtn = byId<HTMLButtonElement>("export-btn");
 const searchInput = byId<HTMLInputElement>("search-input");
 
@@ -115,6 +117,8 @@ const inspEmpty = byId<HTMLDivElement>("insp-empty");
 const inspContent = byId<HTMLDivElement>("insp-content");
 const inspBadges = byId<HTMLDivElement>("insp-badges");
 const inspAbstract = byId<HTMLParagraphElement>("insp-abstract");
+const inspContextsSection = byId<HTMLDivElement>("insp-contexts-section");
+const inspContexts = byId<HTMLUListElement>("insp-contexts");
 const inspYear = byId<HTMLElement>("insp-year");
 const inspVenue = byId<HTMLElement>("insp-venue");
 const inspAuthors = byId<HTMLElement>("insp-authors");
@@ -734,6 +738,19 @@ function openInspector(nodeId: string): void {
     inspRawSection.classList.add("hidden");
   }
 
+  const contexts = node.citation_contexts ?? [];
+  inspContexts.innerHTML = "";
+  if (contexts.length > 0) {
+    inspContextsSection.classList.remove("hidden");
+    for (const ctx of contexts) {
+      const li = document.createElement("li");
+      li.textContent = `“${ctx}”`;
+      inspContexts.appendChild(li);
+    }
+  } else {
+    inspContextsSection.classList.add("hidden");
+  }
+
   // Tab 2: Connections
   connCitesCount.textContent = String(conn.cites.length);
   connCitedByCount.textContent = String(conn.citedBy.length);
@@ -947,23 +964,34 @@ function renderHistory(): void {
 }
 
 // API Handlers
-async function handlePdfUpload(fileList: FileList): Promise<void> {
-  const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-  if (files.length === 0) {
-    showMessages(["Select a PDF file."], true);
+async function handleFileUpload(fileList: FileList): Promise<void> {
+  const all = Array.from(fileList);
+  const pdfFiles = all.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  const bibFiles = all.filter((f) => f.name.toLowerCase().endsWith(".bib"));
+  if (pdfFiles.length === 0 && bibFiles.length === 0) {
+    showMessages(["Select one or more .pdf or .bib files."], true);
     return;
   }
 
   setDiscoverOpen(false);
-  setLoading(true, `Parsing ${files.length} PDF(s)...`);
+  setLoading(true, `Parsing ${pdfFiles.length + bibFiles.length} file(s)...`);
   showMessages([]);
   try {
-    const data = await apiUploadPdfs(files);
-    store.mergePayload(data);
+    const warnings: string[] = [];
+    if (pdfFiles.length > 0) {
+      const data = await apiUploadPdfs(pdfFiles);
+      store.mergePayload(data);
+      warnings.push(...data.warnings);
+    }
+    if (bibFiles.length > 0) {
+      const data = await apiUploadBibs(bibFiles);
+      store.mergePayload(data);
+      warnings.push(...data.warnings);
+    }
     renderAll();
     store.saveHistory(layoutSelect.value as LayoutMode);
     renderHistory();
-    if (data.warnings.length) showMessages(data.warnings);
+    if (warnings.length) showMessages(warnings);
   } catch (err) {
     showMessages([err instanceof Error ? err.message : "Upload failed."], true);
   } finally {
@@ -1207,7 +1235,7 @@ dropzone.addEventListener("keydown", (e) => {
   }
 });
 pdfInput.addEventListener("change", () => {
-  if (pdfInput.files?.length) void handlePdfUpload(pdfInput.files);
+  if (pdfInput.files?.length) void handleFileUpload(pdfInput.files);
 });
 dropzone.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -1217,7 +1245,7 @@ dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover
 dropzone.addEventListener("drop", (e) => {
   e.preventDefault();
   dropzone.classList.remove("dragover");
-  if (e.dataTransfer?.files?.length) void handlePdfUpload(e.dataTransfer.files);
+  if (e.dataTransfer?.files?.length) void handleFileUpload(e.dataTransfer.files);
 });
 
 lookupBtn.addEventListener("click", () => void handleLookup(idInput.value));
@@ -1275,6 +1303,23 @@ zoomOutBtn.addEventListener("click", () => {
   const cy = graphView.cy;
   const center = { x: cy.width() / 2, y: cy.height() / 2 };
   cy.zoom({ level: Math.max(0.1, cy.zoom() / 1.3), renderedPosition: center });
+});
+
+exportPngBtn.addEventListener("click", () => {
+  if (store.nodes.size === 0) {
+    showMessages(["Graph is empty."], true);
+    return;
+  }
+  const isDark = document.documentElement.dataset.theme === "dark";
+  const dataUrl = graphView.cy.png({
+    full: true,
+    scale: 2,
+    bg: isDark ? "#09090b" : "#fafafa",
+  });
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = "citation-graph.png";
+  a.click();
 });
 
 exportBtn.addEventListener("click", () => {

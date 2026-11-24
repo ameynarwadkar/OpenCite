@@ -194,6 +194,28 @@ def test_in_text_citation_year_in_abstract_does_not_override_seed_year():
     assert parsed.arxiv_id == "2412.18022"
 
 
+def test_extracts_in_paper_citation_contexts():
+    pdf = _make_pdf(
+        [
+            [
+                (72, 70, "Context Extraction Study", 18),
+                (72, 110, "1. Introduction", 12),
+                (72, 130, "Prior work [1] introduced self-attention for sequence modeling.", 10),
+                (72, 145, "Later approaches built upon BERT [1, 2] for retrieval tasks.", 10),
+                (72, 190, "References", 12),
+                (72, 215, "[1] A. Vaswani. \"Attention Is All You Need.\" NeurIPS, 2017.", 10),
+                (72, 235, "[2] J. Devlin. \"BERT: Pre-training Transformers.\" NAACL, 2019.", 10),
+            ]
+        ]
+    )
+    parsed = parse_pdf_bytes(pdf, "ctx.pdf")
+    assert len(parsed.references) == 2
+    assert len(parsed.references[0].citation_contexts) == 2
+    assert "self-attention" in parsed.references[0].citation_contexts[0]
+    assert len(parsed.references[1].citation_contexts) == 1
+    assert "BERT [1, 2]" in parsed.references[1].citation_contexts[0]
+
+
 def test_invalid_and_empty_pdf_raise():
     with pytest.raises(PDFParseError):
         parse_pdf_bytes(b"not a pdf", "bad.pdf")

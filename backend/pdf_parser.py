@@ -52,6 +52,8 @@ class ParsedReference:
     year: int | None = None
     doi: str | None = None
     arxiv_id: str | None = None
+    ref_number: int | None = None
+    citation_contexts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -228,6 +230,11 @@ def _parse_single_reference(raw_entry: str) -> ParsedReference:
     arxiv_id = _extract_arxiv_id(cleaned)
     year = _extract_year(cleaned) or _infer_year_from_arxiv(arxiv_id)
 
+    ref_number: int | None = None
+    num_match = re.match(r"^\s*(?:\[(\d{1,4})\]|(\d{1,4})\.)\s*", cleaned)
+    if num_match:
+        ref_number = int(num_match.group(1) or num_match.group(2))
+
     body = re.sub(r"^\s*(?:\[\d{1,4}\]|\d{1,4}\.)\s*", "", cleaned).strip()
     authors: list[str] = []
     title = ""
@@ -295,7 +302,69 @@ def _parse_single_reference(raw_entry: str) -> ParsedReference:
         year=year,
         doi=doi,
         arxiv_id=arxiv_id,
+        ref_number=ref_number,
     )
+
+
+def _split_body_sentences(pages_text: list[str]) -> list[str]:
+    """Return cleaned sentences from the paper body (everything before References)."""
+    all_lines: list[str] = []
+    for text in pages_text:
+        all_lines.extend(text.splitlines())
+
+    heading_idx = len(all_lines)
+    for idx in range(len(all_lines) - 1, -1, -1):
+        if _REF_HEADING_RE.match(all_lines[idx]):
+            heading_idx = idx
+            break
+
+    body_text = _clean_ref_text("\n".join(all_lines[:heading_idx]))
+    raw_sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9(\[])", body_text)
+    return [s.strip() for s in raw_sentences if 25 <= len(s.strip()) <= 500]
+
+
+def _extract_first_surname(ref: ParsedReference) -> str | None:
+    if ref.authors:
+        first = ref.authors[0].strip()
+        if "," in first:
+            surname = first.split(",", 1)[0].strip()
+        else:
+            parts = first.split()
+            surname = parts[-1].strip() if parts else ""
+        if len(surname) >= 3 and surname[0].isupper():
+            return surname
+    m = re.match(r"^([A-Z][A-Za-z'\-]{2,25})[,\s]", ref.raw)
+    return m.group(1) if m else None
+
+
+def _attach_citation_contexts(
+    references: list[ParsedReference], body_sentences: list[str]
+) -> None:
+    if not body_sentences or not references:
+        return
+
+    for ref in references:
+        matches: list[str] = []
+        if ref.ref_number is not None:
+            num = str(ref.ref_number)
+            pat = re.compile(rf"\[(?:\d+\s*[-–,]\s*)*\b{num}\b(?:\s*[-–,]\s*\d+)*\]")
+            for sent in body_sentences:
+                if pat.search(sent):
+                    matches.append(sent[:320])
+                    if len(matches) >= 3:
+                        break
+        else:
+            surname = _extract_first_surname(ref)
+            if surname and ref.year:
+                pat = re.compile(
+                    rf"\b{re.escape(surname)}\b.{{0,40}}\b{ref.year}[a-z]?\b"
+                )
+                for sent in body_sentences:
+                    if pat.search(sent):
+                        matches.append(sent[:320])
+                        if len(matches) >= 3:
+                            break
+        ref.citation_contexts = matches
 
 
 def _locate_references_lines(pages_text: list[str]) -> list[str]:
@@ -529,6 +598,8 @@ def parse_pdf_bytes(data: bytes, filename: str = "paper.pdf") -> ParsedPdfPaper:
             for entry in raw_entries
             if len(entry.strip()) >= 12
         ]
+        body_sentences = _split_body_sentences(pages_text)
+        _attach_citation_contexts(parsed_refs, body_sentences)
 
         return ParsedPdfPaper(
             title=title,

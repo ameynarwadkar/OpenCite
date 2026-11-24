@@ -9,6 +9,7 @@ export interface PaperNode {
   openalex_id: string | null;
   url: string | null;
   raw_citation: string | null;
+  citation_contexts?: string[];
   abstract?: string | null;
   topics?: string[];
   cited_by_count: number | null;

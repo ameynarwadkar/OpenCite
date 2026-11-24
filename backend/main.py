@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.bib_parser import BibParseError, parse_bib_text
 from backend.graph_builder import GraphBuilder, normalize_openalex_id
 from backend.models import (
     CitationEdge,
@@ -141,7 +142,12 @@ async def ingest_pdfs(
             if ref_key and ref_key in enriched_by_doi:
                 ref_node = openalex_work_to_node(
                     enriched_by_doi[ref_key], is_seed=False, is_expanded=False
-                ).model_copy(update={"raw_citation": ref.raw})
+                ).model_copy(
+                    update={
+                        "raw_citation": ref.raw,
+                        "citation_contexts": ref.citation_contexts,
+                    }
+                )
             else:
                 ref_node = PaperNode(
                     id="tmp",
@@ -151,10 +157,84 @@ async def ingest_pdfs(
                     doi=ref.doi,
                     arxiv_id=ref.arxiv_id,
                     raw_citation=ref.raw,
+                    citation_contexts=ref.citation_contexts,
                     is_seed=False,
                     is_expanded=False,
                 )
             ref_id = gb.add_node(ref_node)
+            gb.add_edge(seed_id, ref_id)
+
+    return gb.build(warnings=warnings)
+
+
+@app.post("/api/papers/bib", response_model=GraphPayload)
+async def ingest_bib(
+    files: list[UploadFile] = File(...),
+    resolver: PaperResolver = Depends(get_resolver),
+) -> GraphPayload:
+    """Import one or more BibTeX (.bib) files and enrich DOI/arXiv entries via OpenAlex."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Please upload at least one .bib file.")
+
+    gb = GraphBuilder()
+    warnings: list[str] = []
+    errors: list[str] = []
+    parsed_batches: list[tuple[str, list]] = []
+
+    for upload in files:
+        filename = upload.filename or "references.bib"
+        raw = await upload.read()
+        try:
+            text = raw.decode("utf-8", errors="replace")
+            entries = parse_bib_text(text, filename=filename)
+            parsed_batches.append((filename, entries))
+        except BibParseError as exc:
+            errors.append(str(exc))
+
+    if not parsed_batches:
+        raise HTTPException(status_code=422, detail=" ".join(errors))
+    warnings.extend(errors)
+
+    dois_to_enrich: list[str] = []
+    for _, entries in parsed_batches:
+        for entry in entries:
+            if key := _lookup_key_for_doi_enrichment(entry.doi, entry.arxiv_id):
+                dois_to_enrich.append(key)
+
+    enriched_by_doi = (
+        await resolver.fetch_works_by_dois(dois_to_enrich) if dois_to_enrich else {}
+    )
+
+    for filename, entries in parsed_batches:
+        collection_node = PaperNode(
+            id="tmp",
+            title=filename,
+            is_seed=True,
+            is_expanded=True,
+            expandable=False,
+        )
+        seed_id = gb.add_node(collection_node)
+
+        for entry in entries:
+            key = _lookup_key_for_doi_enrichment(entry.doi, entry.arxiv_id)
+            if key and key in enriched_by_doi:
+                node = openalex_work_to_node(
+                    enriched_by_doi[key], is_seed=False, is_expanded=False
+                )
+            else:
+                node = PaperNode(
+                    id="tmp",
+                    title=entry.title,
+                    authors=entry.authors,
+                    year=entry.year,
+                    venue=entry.venue,
+                    doi=entry.doi,
+                    arxiv_id=entry.arxiv_id,
+                    url=entry.url,
+                    is_seed=False,
+                    is_expanded=False,
+                )
+            ref_id = gb.add_node(node)
             gb.add_edge(seed_id, ref_id)
 
     return gb.build(warnings=warnings)

@@ -25,6 +25,15 @@ export async function apiUploadPdfs(files: File[]): Promise<GraphPayload> {
   return parseJsonOrThrow<GraphPayload>(resp, "Failed to parse PDF.");
 }
 
+export async function apiUploadBibs(files: File[]): Promise<GraphPayload> {
+  const form = new FormData();
+  for (const file of files) {
+    form.append("files", file);
+  }
+  const resp = await fetch("/api/papers/bib", { method: "POST", body: form });
+  return parseJsonOrThrow<GraphPayload>(resp, "Failed to parse .bib file.");
+}
+
 export async function apiLookupIdentifiers(identifiers: string[]): Promise<GraphPayload> {
   const resp = await fetch("/api/papers/lookup", {
     method: "POST",
