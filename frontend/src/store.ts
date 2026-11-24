@@ -127,6 +127,40 @@ export class GraphStore {
     return dist;
   }
 
+  getDirectionalReachableFromSeeds(direction: "cites" | "cited-by"): Set<string> {
+    const seeds = Array.from(this.nodes.values()).filter((n) => n.is_seed);
+    const visited = new Set<string>(seeds.map((s) => s.id));
+    if (seeds.length === 0) return visited;
+
+    const adj = new Map<string, string[]>();
+    for (const key of this.edges) {
+      const [src, dst] = key.split("->");
+      if (direction === "cites") {
+        // Follow outgoing edges: seed -> cited
+        const list = adj.get(src) ?? [];
+        list.push(dst);
+        adj.set(src, list);
+      } else {
+        // Follow incoming edges: seed <- citing
+        const list = adj.get(dst) ?? [];
+        list.push(src);
+        adj.set(dst, list);
+      }
+    }
+
+    const queue = Array.from(visited);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const nxt of adj.get(cur) ?? []) {
+        if (!visited.has(nxt)) {
+          visited.add(nxt);
+          queue.push(nxt);
+        }
+      }
+    }
+    return visited;
+  }
+
   getAvailableTopics(): string[] {
     const counts = new Map<string, number>();
     for (const node of this.nodes.values()) {

@@ -66,11 +66,13 @@ export type LayoutMode = "cose" | "flow" | "timeline" | "ego";
 export type LabelMode = "auto" | "compact" | "full" | "hover";
 export type ThemeMode = "light" | "dark";
 export type RelevanceMode = "all" | "shared" | "highly-connected";
+export type DirectionMode = "both" | "cites" | "cited-by";
 export type DepthMode = "all" | "1" | "2" | "3";
 export type NodeSizeMode = "degree" | "citations";
 
 export interface GraphFilters {
   relevance: RelevanceMode;
+  direction: DirectionMode;
   depth: DepthMode;
   minYear: number | null;
   maxYear: number | null;

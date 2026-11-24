@@ -458,6 +458,10 @@ export class CitationGraphView {
     const hopDist =
       filters.depth !== "all" ? this.store.computeHopDistancesFromSeeds() : null;
     const maxHops = filters.depth !== "all" ? Number(filters.depth) : Infinity;
+    const directionalAllowed =
+      filters.direction !== "both"
+        ? this.store.getDirectionalReachableFromSeeds(filters.direction)
+        : null;
 
     // Determine dynamic hub threshold so dense cross-cited graphs keep clear visual hierarchy
     const nonSeedDegrees: number[] = [];
@@ -496,6 +500,9 @@ export class CitationGraphView {
           if (filters.relevance === "shared" && deg < 2) continue;
           if (filters.relevance === "highly-connected" && !isShared) continue;
         }
+
+        // Citation direction filter (cites only vs cited-by only)
+        if (directionalAllowed && !directionalAllowed.has(id)) continue;
 
         // Exploration depth filter (hops from seed)
         if (hopDist && !node.is_seed) {

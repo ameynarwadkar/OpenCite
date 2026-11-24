@@ -13,6 +13,7 @@ import { CitationGraphView } from "./graph";
 import { formatCompactLabel, formatFullLabel, GraphStore } from "./store";
 import type {
   DepthMode,
+  DirectionMode,
   GraphFilters,
   LabelMode,
   LayoutMode,
@@ -65,6 +66,7 @@ const seedSection = byId<HTMLElement>("seed-section");
 const seedList = byId<HTMLUListElement>("seed-list");
 const resetFiltersBtn = byId<HTMLButtonElement>("reset-filters-btn");
 const relevanceSelect = byId<HTMLSelectElement>("relevance-select");
+const directionSelect = byId<HTMLSelectElement>("direction-select");
 const depthSelect = byId<HTMLSelectElement>("depth-select");
 const sizeModeSelect = byId<HTMLSelectElement>("size-mode-select");
 const minYearInput = byId<HTMLInputElement>("min-year-input");
@@ -290,6 +292,7 @@ function getCurrentFilters(): GraphFilters {
   const maxY = parseInt(maxYearInput.value, 10);
   return {
     relevance: relevanceSelect.value as RelevanceMode,
+    direction: directionSelect.value as DirectionMode,
     depth: depthSelect.value as DepthMode,
     minYear: Number.isNaN(minY) ? null : minY,
     maxYear: Number.isNaN(maxY) ? null : maxY,
@@ -303,6 +306,7 @@ function updateFilterResetVisibility(): void {
   const f = getCurrentFilters();
   const active =
     f.relevance !== "all" ||
+    f.direction !== "both" ||
     f.depth !== "all" ||
     f.minYear !== null ||
     f.maxYear !== null ||
@@ -1229,6 +1233,7 @@ labelModeSelect.addEventListener("change", () =>
   graphView.setLabelMode(labelModeSelect.value as LabelMode)
 );
 relevanceSelect.addEventListener("change", () => renderAll());
+directionSelect.addEventListener("change", () => renderAll());
 depthSelect.addEventListener("change", () => renderAll());
 sizeModeSelect.addEventListener("change", () => renderAll());
 minCitesSelect.addEventListener("change", () => renderAll());
@@ -1237,6 +1242,7 @@ minYearInput.addEventListener("input", () => renderAll());
 maxYearInput.addEventListener("input", () => renderAll());
 resetFiltersBtn.addEventListener("click", () => {
   relevanceSelect.value = "all";
+  directionSelect.value = "both";
   depthSelect.value = "all";
   sizeModeSelect.value = "degree";
   minCitesSelect.value = "0";
@@ -1244,6 +1250,7 @@ resetFiltersBtn.addEventListener("click", () => {
   minYearInput.value = "";
   maxYearInput.value = "";
   relevanceDropdown.sync();
+  directionDropdown.sync();
   depthDropdown.sync();
   sizeDropdown.sync();
   minCitesDropdown.sync();
@@ -1393,6 +1400,7 @@ const layoutDropdown = enhanceSelect(layoutSelect);
 enhanceSelect(labelModeSelect);
 enhanceSelect(discoverSortSelect);
 const relevanceDropdown = enhanceSelect(relevanceSelect);
+const directionDropdown = enhanceSelect(directionSelect);
 const depthDropdown = enhanceSelect(depthSelect);
 const sizeDropdown = enhanceSelect(sizeModeSelect);
 const minCitesDropdown = enhanceSelect(minCitesSelect);
