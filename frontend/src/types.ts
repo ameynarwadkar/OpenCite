@@ -65,6 +65,27 @@ export interface PathResult {
 export type LayoutMode = "cose" | "flow" | "timeline" | "ego";
 export type LabelMode = "auto" | "compact" | "full" | "hover";
 export type ThemeMode = "light" | "dark";
+export type RelevanceMode = "all" | "shared" | "highly-connected";
+export type DepthMode = "all" | "1" | "2" | "3";
+export type NodeSizeMode = "degree" | "citations";
+
+export interface GraphFilters {
+  relevance: RelevanceMode;
+  depth: DepthMode;
+  minYear: number | null;
+  maxYear: number | null;
+  minCitations: number;
+  topic: string;
+  sizeBy: NodeSizeMode;
+}
+
+export interface BridgePaperRank {
+  node: PaperNode;
+  connectedSeedCount: number;
+  totalSeeds: number;
+  localCites: number;
+  score: number;
+}
 
 export interface UndoSnapshot {
   label: string;

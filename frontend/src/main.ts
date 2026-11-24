@@ -7,10 +7,19 @@ import {
   apiLookupIdentifiers,
   apiUploadPdfs,
 } from "./api";
-import { enhanceSelect } from "./dropdown";
+import { enhanceSelect, type CustomDropdown } from "./dropdown";
 import { CitationGraphView } from "./graph";
 import { formatCompactLabel, formatFullLabel, GraphStore } from "./store";
-import type { LabelMode, LayoutMode, PaperNode, ThemeMode } from "./types";
+import type {
+  DepthMode,
+  GraphFilters,
+  LabelMode,
+  LayoutMode,
+  NodeSizeMode,
+  PaperNode,
+  RelevanceMode,
+  ThemeMode,
+} from "./types";
 
 const THEME_KEY = "citation-graph:theme";
 const PANEL_LAYOUT_KEY = "citation-graph:panel-layout";
@@ -53,7 +62,15 @@ const lookupBtn = byId<HTMLButtonElement>("lookup-btn");
 const demoBtn = byId<HTMLButtonElement>("demo-btn");
 const seedSection = byId<HTMLElement>("seed-section");
 const seedList = byId<HTMLUListElement>("seed-list");
-const sharedOnlyToggle = byId<HTMLInputElement>("shared-only-toggle");
+const resetFiltersBtn = byId<HTMLButtonElement>("reset-filters-btn");
+const relevanceSelect = byId<HTMLSelectElement>("relevance-select");
+const depthSelect = byId<HTMLSelectElement>("depth-select");
+const sizeModeSelect = byId<HTMLSelectElement>("size-mode-select");
+const minYearInput = byId<HTMLInputElement>("min-year-input");
+const maxYearInput = byId<HTMLInputElement>("max-year-input");
+const minCitesSelect = byId<HTMLSelectElement>("min-cites-select");
+const topicFilterWrap = byId<HTMLDivElement>("topic-filter-wrap");
+const topicSelect = byId<HTMLSelectElement>("topic-select");
 const enrichYearsBtn = byId<HTMLButtonElement>("enrich-years-btn");
 const restoreHiddenBtn = byId<HTMLButtonElement>("restore-hidden-btn");
 const historyList = byId<HTMLUListElement>("history-list");
@@ -266,18 +283,61 @@ function formatCompactCount(n: number | null): string {
   return String(n);
 }
 
+function getCurrentFilters(): GraphFilters {
+  const minY = parseInt(minYearInput.value, 10);
+  const maxY = parseInt(maxYearInput.value, 10);
+  return {
+    relevance: relevanceSelect.value as RelevanceMode,
+    depth: depthSelect.value as DepthMode,
+    minYear: Number.isNaN(minY) ? null : minY,
+    maxYear: Number.isNaN(maxY) ? null : maxY,
+    minCitations: parseInt(minCitesSelect.value, 10) || 0,
+    topic: topicSelect.value,
+    sizeBy: sizeModeSelect.value as NodeSizeMode,
+  };
+}
+
+function updateFilterResetVisibility(): void {
+  const f = getCurrentFilters();
+  const active =
+    f.relevance !== "all" ||
+    f.depth !== "all" ||
+    f.minYear !== null ||
+    f.maxYear !== null ||
+    f.minCitations > 0 ||
+    f.topic !== "" ||
+    f.sizeBy !== "degree";
+  resetFiltersBtn.classList.toggle("hidden", !active);
+}
+
+function syncTopicFilterOptions(): void {
+  const topics = store.getAvailableTopics();
+  const prevVal = topicSelect.value;
+  topicSelect.innerHTML = `<option value="">Topic: All</option>`;
+  for (const t of topics) {
+    const opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = t;
+    topicSelect.appendChild(opt);
+  }
+  topicSelect.value = topics.includes(prevVal) ? prevVal : "";
+  topicFilterWrap.classList.toggle("hidden", topics.length === 0);
+  topicDropdown?.sync();
+}
+
 function renderDiscover(): void {
   const mode = discoverSortSelect.value;
-  const inDeg = store.computeInDegrees();
-  const candidates = Array.from(store.nodes.values())
-    .filter((n) => !n.is_seed)
-    .map((node) => {
-      const localCites = inDeg.get(node.id) ?? 0;
-      const globalScore = Math.log10((node.cited_by_count ?? 0) + 1);
-      return { node, localCites, score: localCites * 3 + globalScore };
-    });
+  const bridgeRanked = store.getBridgePapers();
 
+  const candidates = [...bridgeRanked];
   candidates.sort((a, b) => {
+    if (mode === "bridge") {
+      if (b.connectedSeedCount !== a.connectedSeedCount) {
+        return b.connectedSeedCount - a.connectedSeedCount;
+      }
+      if (b.localCites !== a.localCites) return b.localCites - a.localCites;
+      return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
+    }
     if (mode === "local") {
       if (b.localCites !== a.localCites) return b.localCites - a.localCites;
       return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
@@ -288,7 +348,10 @@ function renderDiscover(): void {
     if (mode === "newest") {
       return (b.node.year ?? 0) - (a.node.year ?? 0);
     }
-    if (b.score !== a.score) return b.score - a.score;
+    // foundational
+    const scoreA = a.localCites * 3 + Math.log10((a.node.cited_by_count ?? 0) + 1);
+    const scoreB = b.localCites * 3 + Math.log10((b.node.cited_by_count ?? 0) + 1);
+    if (scoreB !== scoreA) return scoreB - scoreA;
     return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
   });
 
@@ -331,6 +394,12 @@ function renderDiscover(): void {
 
     card.appendChild(top);
     card.appendChild(title);
+    if (entry.totalSeeds >= 2 && entry.connectedSeedCount >= 2) {
+      const bridgeBadge = document.createElement("span");
+      bridgeBadge.className = "discover-bridge-pill";
+      bridgeBadge.textContent = `Bridges ${entry.connectedSeedCount}/${entry.totalSeeds} seeds`;
+      card.appendChild(bridgeBadge);
+    }
     if (authors.textContent) card.appendChild(authors);
     discoverList.appendChild(card);
   });
@@ -497,7 +566,9 @@ function handleNodeSelected(nodeId: string): void {
 
 function renderAll(): void {
   clearPathMode();
-  graphView.render(sharedOnlyToggle.checked, searchInput.value);
+  syncTopicFilterOptions();
+  updateFilterResetVisibility();
+  graphView.render(getCurrentFilters(), searchInput.value);
   updateStatsAndSeeds();
   updateUndoButton();
   if (discoverOpen) renderDiscover();
@@ -1113,7 +1184,28 @@ layoutSelect.addEventListener("change", () =>
 labelModeSelect.addEventListener("change", () =>
   graphView.setLabelMode(labelModeSelect.value as LabelMode)
 );
-sharedOnlyToggle.addEventListener("change", () => renderAll());
+relevanceSelect.addEventListener("change", () => renderAll());
+depthSelect.addEventListener("change", () => renderAll());
+sizeModeSelect.addEventListener("change", () => renderAll());
+minCitesSelect.addEventListener("change", () => renderAll());
+topicSelect.addEventListener("change", () => renderAll());
+minYearInput.addEventListener("input", () => renderAll());
+maxYearInput.addEventListener("input", () => renderAll());
+resetFiltersBtn.addEventListener("click", () => {
+  relevanceSelect.value = "all";
+  depthSelect.value = "all";
+  sizeModeSelect.value = "degree";
+  minCitesSelect.value = "0";
+  topicSelect.value = "";
+  minYearInput.value = "";
+  maxYearInput.value = "";
+  relevanceDropdown.sync();
+  depthDropdown.sync();
+  sizeDropdown.sync();
+  minCitesDropdown.sync();
+  topicDropdown?.sync();
+  renderAll();
+});
 searchInput.addEventListener("input", () => graphView.applySearchHighlight(searchInput.value));
 crossCiteBtn.addEventListener("click", () => void handleCrossCitations());
 rearrangeBtn.addEventListener("click", () => graphView.applyLayout(true));
@@ -1256,6 +1348,11 @@ try {
 const layoutDropdown = enhanceSelect(layoutSelect);
 enhanceSelect(labelModeSelect);
 enhanceSelect(discoverSortSelect);
+const relevanceDropdown = enhanceSelect(relevanceSelect);
+const depthDropdown = enhanceSelect(depthSelect);
+const sizeDropdown = enhanceSelect(sizeModeSelect);
+const minCitesDropdown = enhanceSelect(minCitesSelect);
+let topicDropdown: CustomDropdown | null = enhanceSelect(topicSelect);
 
 applyTheme(initialTheme);
 applyPanelLayout();

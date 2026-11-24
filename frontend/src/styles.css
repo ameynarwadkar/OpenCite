@@ -391,6 +391,48 @@ textarea:focus,
   width: 100%;
 }
 
+.filter-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.filter-stack .c-select {
+  width: 100%;
+}
+
+.filter-stack .c-select-trigger {
+  width: 100%;
+}
+
+.filter-stack .c-select-menu {
+  width: 100%;
+  min-width: 150px;
+}
+
+.control-compact {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.discover-bridge-pill {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
 .toggle-row {
   display: flex;
   align-items: center;

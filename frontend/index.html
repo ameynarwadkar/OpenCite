@@ -69,11 +69,51 @@
 
         <!-- Filters -->
         <section class="section">
-          <span class="label">Filters</span>
-          <label class="toggle-row">
-            <input id="shared-only-toggle" type="checkbox" />
-            <span>Shared papers only</span>
-          </label>
+          <div class="row-between">
+            <span class="label">Filters</span>
+            <button id="reset-filters-btn" class="text-btn hidden" type="button">Reset</button>
+          </div>
+
+          <div class="filter-stack">
+            <select id="relevance-select" class="control filter-select" title="Visible papers">
+              <option value="all">Visible: All papers</option>
+              <option value="shared">Visible: Shared &amp; seeds</option>
+              <option value="highly-connected">Visible: Highly connected</option>
+            </select>
+
+            <div class="filter-row-2">
+              <select id="depth-select" class="control filter-select" title="Exploration depth">
+                <option value="all">Depth: All</option>
+                <option value="1">1 hop</option>
+                <option value="2">2 hops</option>
+                <option value="3">3 hops</option>
+              </select>
+
+              <select id="size-mode-select" class="control filter-select" title="Node sizing">
+                <option value="degree">Size: Degree</option>
+                <option value="citations">Size: Citations</option>
+              </select>
+            </div>
+
+            <div class="filter-row-2">
+              <input id="min-year-input" class="control control-compact" type="number" min="1900" max="2099" placeholder="From year" />
+              <input id="max-year-input" class="control control-compact" type="number" min="1900" max="2099" placeholder="To year" />
+            </div>
+
+            <select id="min-cites-select" class="control filter-select" title="Minimum global citations">
+              <option value="0">Citations: Any</option>
+              <option value="50">Citations: 50+</option>
+              <option value="500">Citations: 500+</option>
+              <option value="2000">Citations: 2,000+</option>
+            </select>
+
+            <div id="topic-filter-wrap" class="hidden">
+              <select id="topic-select" class="control filter-select" title="Filter by topic">
+                <option value="">Topic: All</option>
+              </select>
+            </div>
+          </div>
+
           <button id="enrich-years-btn" class="btn btn-outline btn-full hidden" type="button">
             Resolve years
           </button>
@@ -154,6 +194,7 @@
             </div>
             <div class="discover-controls">
               <select id="discover-sort-select" class="control control-sm">
+                <option value="bridge">Sort: Bridge papers</option>
                 <option value="foundational">Sort: Foundational</option>
                 <option value="local">Sort: Most shared</option>
                 <option value="global">Sort: Most cited</option>

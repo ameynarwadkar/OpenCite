@@ -2,7 +2,7 @@ import cytoscape, { type Core, type LayoutOptions, type NodeSingular } from "cyt
 import elk from "cytoscape-elk";
 import fcose from "cytoscape-fcose";
 import { formatCompactLabel, formatFullLabel, type GraphStore } from "./store";
-import type { LabelMode, LayoutMode, ThemeMode } from "./types";
+import type { GraphFilters, LabelMode, LayoutMode, ThemeMode } from "./types";
 
 cytoscape.use(fcose);
 cytoscape.use(elk);
@@ -158,13 +158,13 @@ export class CitationGraphView {
         {
           selector: "edge",
           style: {
-            width: 1.2,
+            width: 1,
             "line-color": "#d4d4d8",
             "target-arrow-color": "#a1a1aa",
             "target-arrow-shape": "triangle",
-            "arrow-scale": 0.72,
+            "arrow-scale": 0.68,
             "curve-style": "bezier",
-            opacity: 0.65,
+            opacity: 0.42,
             "z-index": 1,
           },
         },
@@ -391,8 +391,11 @@ export class CitationGraphView {
     this.applyLayout();
   }
 
-  render(sharedOnly: boolean, searchQuery: string): void {
+  render(filters: GraphFilters, searchQuery: string): void {
     const inDeg = this.store.computeInDegrees();
+    const hopDist =
+      filters.depth !== "all" ? this.store.computeHopDistancesFromSeeds() : null;
+    const maxHops = filters.depth !== "all" ? Number(filters.depth) : Infinity;
 
     // Determine dynamic hub threshold so dense cross-cited graphs keep clear visual hierarchy
     const nonSeedDegrees: number[] = [];
@@ -425,16 +428,51 @@ export class CitationGraphView {
         if (this.store.hiddenIds.has(id)) continue;
         const deg = inDeg.get(id) ?? 0;
         const isShared = deg >= sharedThreshold && !node.is_seed;
-        if (sharedOnly && !node.is_seed && deg < 2) continue;
+
+        // Relevance filter
+        if (!node.is_seed) {
+          if (filters.relevance === "shared" && deg < 2) continue;
+          if (filters.relevance === "highly-connected" && !isShared) continue;
+        }
+
+        // Exploration depth filter (hops from seed)
+        if (hopDist && !node.is_seed) {
+          const d = hopDist.get(id);
+          if (d === undefined || d > maxHops) continue;
+        }
+
+        // Publication year range filter
+        if (!node.is_seed && (filters.minYear !== null || filters.maxYear !== null)) {
+          if (node.year === null) continue;
+          if (filters.minYear !== null && node.year < filters.minYear) continue;
+          if (filters.maxYear !== null && node.year > filters.maxYear) continue;
+        }
+
+        // Min global citations filter
+        if (!node.is_seed && filters.minCitations > 0) {
+          if ((node.cited_by_count ?? 0) < filters.minCitations) continue;
+        }
+
+        // Topic / community filter
+        if (!node.is_seed && filters.topic) {
+          if (!(node.topics ?? []).includes(filters.topic)) continue;
+        }
+
         visibleIds.add(id);
 
-        const size = node.is_seed
-          ? 36
-          : isShared
-            ? Math.min(38, 22 + Math.min(deg, 8) * 2)
+        let size: number;
+        if (node.is_seed) {
+          size = 36;
+        } else if (filters.sizeBy === "citations") {
+          const logCites = Math.log10((node.cited_by_count ?? 0) + 1);
+          size = Math.round(Math.min(34, Math.max(14, 12 + logCites * 4.2)));
+        } else {
+          size = isShared
+            ? Math.min(36, 22 + Math.min(deg, 7) * 2)
             : deg >= 2
-              ? 20
-              : 15;
+              ? 19
+              : 14;
+        }
         const classes = ["paper"];
         if (node.is_seed) {
           classes.push("seed");

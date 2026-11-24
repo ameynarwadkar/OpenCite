@@ -1,4 +1,5 @@
 import type {
+  BridgePaperRank,
   CitationEdge,
   GraphPayload,
   HistoryEntry,
@@ -89,6 +90,109 @@ export class GraphStore {
       inDeg.set(dst, (inDeg.get(dst) ?? 0) + 1);
     }
     return inDeg;
+  }
+
+  computeHopDistancesFromSeeds(): Map<string, number> {
+    const dist = new Map<string, number>();
+    const seeds = Array.from(this.nodes.values()).filter((n) => n.is_seed);
+    if (seeds.length === 0) return dist;
+
+    const adj = new Map<string, string[]>();
+    for (const key of this.edges) {
+      const [s, t] = key.split("->");
+      const a = adj.get(s) ?? [];
+      a.push(t);
+      adj.set(s, a);
+      const b = adj.get(t) ?? [];
+      b.push(s);
+      adj.set(t, b);
+    }
+
+    const queue: string[] = [];
+    for (const seed of seeds) {
+      dist.set(seed.id, 0);
+      queue.push(seed.id);
+    }
+
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      const curDist = dist.get(cur)!;
+      for (const nxt of adj.get(cur) ?? []) {
+        if (!dist.has(nxt)) {
+          dist.set(nxt, curDist + 1);
+          queue.push(nxt);
+        }
+      }
+    }
+    return dist;
+  }
+
+  getAvailableTopics(): string[] {
+    const counts = new Map<string, number>();
+    for (const node of this.nodes.values()) {
+      for (const topic of node.topics ?? []) {
+        counts.set(topic, (counts.get(topic) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 20)
+      .map(([t]) => t);
+  }
+
+  getBridgePapers(): BridgePaperRank[] {
+    const inDeg = this.computeInDegrees();
+    const seeds = Array.from(this.nodes.values()).filter((n) => n.is_seed);
+    const totalSeeds = seeds.length;
+
+    // Build undirected 2-hop reachability from each seed
+    const adj = new Map<string, string[]>();
+    for (const key of this.edges) {
+      const [s, t] = key.split("->");
+      const a = adj.get(s) ?? [];
+      a.push(t);
+      adj.set(s, a);
+      const b = adj.get(t) ?? [];
+      b.push(s);
+      adj.set(t, b);
+    }
+
+    const seedCountByNode = new Map<string, number>();
+    for (const seed of seeds) {
+      const visited = new Set<string>([seed.id]);
+      const frontier1 = adj.get(seed.id) ?? [];
+      for (const n1 of frontier1) {
+        visited.add(n1);
+      }
+      for (const n1 of frontier1) {
+        for (const n2 of adj.get(n1) ?? []) {
+          visited.add(n2);
+        }
+      }
+      for (const nid of visited) {
+        if (nid === seed.id) continue;
+        seedCountByNode.set(nid, (seedCountByNode.get(nid) ?? 0) + 1);
+      }
+    }
+
+    const ranked: BridgePaperRank[] = [];
+    for (const [id, node] of this.nodes.entries()) {
+      if (node.is_seed) continue;
+      const localCites = inDeg.get(id) ?? 0;
+      const connectedSeedCount = seedCountByNode.get(id) ?? 0;
+      const globalLog = Math.log10((node.cited_by_count ?? 0) + 1);
+      const score = connectedSeedCount * 10 + localCites * 3 + globalLog;
+      ranked.push({ node, connectedSeedCount, totalSeeds, localCites, score });
+    }
+
+    ranked.sort((a, b) => {
+      if (b.connectedSeedCount !== a.connectedSeedCount) {
+        return b.connectedSeedCount - a.connectedSeedCount;
+      }
+      if (b.localCites !== a.localCites) return b.localCites - a.localCites;
+      return (b.node.cited_by_count ?? 0) - (a.node.cited_by_count ?? 0);
+    });
+    return ranked;
   }
 
   getTopFoundational(limit = 5): RankedPaper[] {
