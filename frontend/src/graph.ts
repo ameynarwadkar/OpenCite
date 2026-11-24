@@ -158,34 +158,34 @@ export class CitationGraphView {
         {
           selector: "edge",
           style: {
-            width: 1,
+            width: 0.9,
             "line-color": "#d4d4d8",
             "target-arrow-color": "#a1a1aa",
             "target-arrow-shape": "triangle",
-            "arrow-scale": 0.68,
+            "arrow-scale": 0.65,
             "curve-style": "bezier",
-            opacity: 0.42,
+            opacity: 0.25,
             "z-index": 1,
-          },
-        },
-        {
-          selector: "edge.primary-edge",
-          style: {
-            width: 1.65,
-            "line-color": "#0ea5e9",
-            "target-arrow-color": "#0ea5e9",
-            opacity: 0.82,
-            "z-index": 4,
           },
         },
         {
           selector: "edge[edgeColor]",
           style: {
-            width: 1.85,
+            width: 1.35,
             "line-color": "data(edgeColor)",
             "target-arrow-color": "data(edgeColor)",
-            opacity: 0.88,
+            opacity: 0.52,
             "z-index": 3,
+          },
+        },
+        {
+          selector: "edge.primary-edge",
+          style: {
+            width: 2.2,
+            "line-color": "#0284c7",
+            "target-arrow-color": "#0284c7",
+            opacity: 1,
+            "z-index": 6,
           },
         },
         {
@@ -383,15 +383,15 @@ export class CitationGraphView {
         "line-color": isDark ? "#3f3f46" : "#d4d4d8",
         "target-arrow-color": isDark ? "#52525b" : "#a1a1aa",
       })
-      .selector("edge.primary-edge")
-      .style({
-        "line-color": isDark ? "#38bdf8" : "#0ea5e9",
-        "target-arrow-color": isDark ? "#38bdf8" : "#0ea5e9",
-      })
       .selector("edge[edgeColor]")
       .style({
         "line-color": "data(edgeColor)",
         "target-arrow-color": "data(edgeColor)",
+      })
+      .selector("edge.primary-edge")
+      .style({
+        "line-color": isDark ? "#38bdf8" : "#0284c7",
+        "target-arrow-color": isDark ? "#38bdf8" : "#0284c7",
       })
       .update();
   }
