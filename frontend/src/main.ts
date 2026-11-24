@@ -8,6 +8,7 @@ import {
   apiLookupIdentifiers,
   apiUploadBibs,
   apiUploadPdfs,
+  apiUploadRis,
 } from "./api";
 import { enhanceSelect, type CustomDropdown } from "./dropdown";
 import { CitationGraphView } from "./graph";
@@ -26,6 +27,7 @@ import type {
 
 const THEME_KEY = "citation-graph:theme";
 const PANEL_LAYOUT_KEY = "citation-graph:panel-layout";
+const OFFLINE_KEY = "citation-graph:offline";
 
 interface PanelLayoutState {
   leftWidth: number;
@@ -49,6 +51,8 @@ const toggleRightBtn = byId<HTMLButtonElement>("toggle-right-btn");
 const tabWorkspaceBtn = byId<HTMLButtonElement>("tab-workspace-btn");
 const tabDiscoverBtn = byId<HTMLButtonElement>("tab-discover-btn");
 const themeToggle = byId<HTMLButtonElement>("theme-toggle");
+const offlineToggleBtn = byId<HTMLButtonElement>("offline-toggle-btn");
+const exportBibBtn = byId<HTMLButtonElement>("export-bib-btn");
 const exportSvgBtn = byId<HTMLButtonElement>("export-svg-btn");
 const exportPngBtn = byId<HTMLButtonElement>("export-png-btn");
 const exportBtn = byId<HTMLButtonElement>("export-btn");
@@ -177,6 +181,7 @@ const detailsAttemptedIds = new Set<string>();
 let pathStartId: string | null = null;
 let pathActive = false;
 let discoverOpen = false;
+let offlineMode = false;
 let toastTimer: number | null = null;
 
 const panelState: PanelLayoutState = loadPanelLayout();
@@ -451,6 +456,28 @@ function showMessages(messages: string[], isError = false): void {
     toastTimer = window.setTimeout(() => {
       statusArea.innerHTML = "";
     }, 6500);
+  }
+}
+
+function applyOfflineMode(enabled: boolean): void {
+  offlineMode = enabled;
+  offlineToggleBtn.classList.toggle("active", enabled);
+  try {
+    localStorage.setItem(OFFLINE_KEY, enabled ? "1" : "0");
+  } catch {
+    // Ignore storage errors
+  }
+
+  lookupBtn.disabled = enabled;
+  demoBtn.disabled = enabled;
+  idInput.disabled = enabled;
+  idInput.placeholder = enabled ? "Disabled in Local-only mode" : "DOI or arXiv ID\n1706.03762";
+  crossCiteBtn.disabled = enabled;
+  enrichYearsBtn.disabled = enabled;
+
+  statusBarMsg.textContent = enabled ? "Local-only · zero outbound requests" : "Ready";
+  if (store.selectedId && store.nodes.has(store.selectedId)) {
+    openInspector(store.selectedId);
   }
 }
 
@@ -735,12 +762,14 @@ function openInspector(nodeId: string): void {
   if (node.abstract) {
     inspAbstract.textContent = node.abstract;
     inspAbstract.classList.remove("muted");
-  } else if (!detailsAttemptedIds.has(nodeId) && node.expandable) {
+  } else if (!offlineMode && !detailsAttemptedIds.has(nodeId) && node.expandable) {
     inspAbstract.textContent = "Fetching abstract...";
     inspAbstract.classList.add("muted");
     void lazyLoadPaperDetails(nodeId);
   } else {
-    inspAbstract.textContent = "No abstract indexed for this paper.";
+    inspAbstract.textContent = offlineMode
+      ? "Abstract lookup paused (Local-only mode)."
+      : "No abstract indexed for this paper.";
     inspAbstract.classList.add("muted");
   }
   inspYear.textContent = node.year ? String(node.year) : "—";
@@ -849,13 +878,13 @@ function openInspector(nodeId: string): void {
 
   // Tab 4: Actions
   expandBtn.textContent = node.is_expanded ? "Older ✓" : "← Older";
-  expandBtn.disabled = node.is_expanded || !node.expandable;
+  expandBtn.disabled = offlineMode || node.is_expanded || !node.expandable;
 
   expandCitedByBtn.textContent = node.is_cited_by_expanded ? "Newer ✓" : "→ Newer";
-  expandCitedByBtn.disabled = node.is_cited_by_expanded || !node.expandable;
+  expandCitedByBtn.disabled = offlineMode || node.is_cited_by_expanded || !node.expandable;
 
   toggleSeedBtn.textContent = node.is_seed ? "Remove seed" : "Add as seed";
-  newGraphBtn.disabled = !node.expandable;
+  newGraphBtn.disabled = offlineMode || !node.expandable;
   copyBibtexBtn.textContent = "Copy BibTeX";
 
   setInspectorTab(activeInspectorTab);
@@ -990,39 +1019,66 @@ async function handleFileUpload(fileList: FileList): Promise<void> {
   const all = Array.from(fileList);
   const pdfFiles = all.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
   const bibFiles = all.filter((f) => f.name.toLowerCase().endsWith(".bib"));
-  if (pdfFiles.length === 0 && bibFiles.length === 0) {
-    showMessages(["Select one or more .pdf or .bib files."], true);
+  const risFiles = all.filter((f) => f.name.toLowerCase().endsWith(".ris"));
+  if (pdfFiles.length === 0 && bibFiles.length === 0 && risFiles.length === 0) {
+    showMessages(["Select one or more .pdf, .bib, or .ris files."], true);
     return;
   }
 
   setDiscoverOpen(false);
-  setLoading(true, `Parsing ${pdfFiles.length + bibFiles.length} file(s)...`);
+  setLoading(
+    true,
+    `Parsing ${pdfFiles.length + bibFiles.length + risFiles.length} file(s)${offlineMode ? " (local only)" : ""}...`
+  );
   showMessages([]);
   try {
     const warnings: string[] = [];
     if (pdfFiles.length > 0) {
-      const data = await apiUploadPdfs(pdfFiles);
+      const data = await apiUploadPdfs(pdfFiles, offlineMode);
       store.mergePayload(data);
       warnings.push(...data.warnings);
     }
     if (bibFiles.length > 0) {
-      const data = await apiUploadBibs(bibFiles);
+      const data = await apiUploadBibs(bibFiles, offlineMode);
+      store.mergePayload(data);
+      warnings.push(...data.warnings);
+    }
+    if (risFiles.length > 0) {
+      const data = await apiUploadRis(risFiles, offlineMode);
       store.mergePayload(data);
       warnings.push(...data.warnings);
     }
     renderAll();
     store.saveHistory(layoutSelect.value as LayoutMode);
     renderHistory();
+
     if (warnings.length) showMessages(warnings);
+    if ((bibFiles.length > 0 || risFiles.length > 0) && !offlineMode && store.nodes.size >= 3) {
+      // Offer one-click cross-citation linking right after bibliography import
+      const toast = document.createElement("div");
+      toast.className = "toast toast-action";
+      const txt = document.createElement("span");
+      txt.textContent = "Bibliography imported. Interconnect citations?";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-primary btn-sm";
+      btn.textContent = "Connect refs";
+      btn.addEventListener("click", () => void handleCrossCitations());
+      toast.appendChild(txt);
+      toast.appendChild(btn);
+      statusArea.prepend(toast);
+    }
   } catch (err) {
     showMessages([err instanceof Error ? err.message : "Upload failed."], true);
   } finally {
     setLoading(false);
+    if (offlineMode) statusBarMsg.textContent = "Local-only · zero outbound requests";
     pdfInput.value = "";
   }
 }
 
 async function handleLookup(rawText: string): Promise<void> {
+  if (offlineMode) return;
   const ids = rawText
     .split(/[\n,]+/)
     .map((s) => s.trim())
@@ -1142,6 +1198,7 @@ async function handleNewGraphFromNode(): Promise<void> {
 }
 
 async function handleCrossCitations(): Promise<void> {
+  if (offlineMode) return;
   const allNodes = Array.from(store.nodes.values());
   if (allNodes.length < 3) return;
 
@@ -1178,12 +1235,13 @@ async function handleCrossCitations(): Promise<void> {
   } catch (err) {
     showMessages([err instanceof Error ? err.message : "Cross-citation lookup failed."], true);
   } finally {
-    crossCiteBtn.disabled = false;
+    crossCiteBtn.disabled = offlineMode;
     setLoading(false);
   }
 }
 
 async function handleEnrichYears(): Promise<void> {
+  if (offlineMode) return;
   const undated = Array.from(store.nodes.values()).filter((n) => !n.year);
   if (undated.length === 0) return;
 
@@ -1210,7 +1268,7 @@ async function handleEnrichYears(): Promise<void> {
   } catch (err) {
     showMessages([err instanceof Error ? err.message : "Enrichment failed."], true);
   } finally {
-    enrichYearsBtn.disabled = false;
+    enrichYearsBtn.disabled = offlineMode;
     setLoading(false);
   }
 }
@@ -1247,6 +1305,35 @@ discoverSortSelect.addEventListener("change", () => renderDiscover());
 themeToggle.addEventListener("click", () => {
   const next: ThemeMode = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   applyTheme(next);
+});
+
+offlineToggleBtn.addEventListener("click", () => {
+  applyOfflineMode(!offlineMode);
+});
+
+exportBibBtn.addEventListener("click", () => {
+  const visibleIds = new Set<string>(
+    graphView.cy.nodes(".paper").not(".ego-hidden").map((n) => n.id())
+  );
+  const entries: string[] = [];
+  for (const id of visibleIds) {
+    const node = store.nodes.get(id);
+    if (node && node.expandable) {
+      entries.push(store.toBibtex(node));
+    }
+  }
+  if (entries.length === 0) {
+    showMessages(["No papers to export as BibTeX."], true);
+    return;
+  }
+  const blob = new Blob([entries.join("\n\n") + "\n"], { type: "application/x-bibtex;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "citation-graph.bib";
+  a.click();
+  URL.revokeObjectURL(url);
+  showMessages([`Exported ${entries.length} paper(s) to citation-graph.bib.`]);
 });
 
 dropzone.addEventListener("click", () => pdfInput.click());
@@ -1494,6 +1581,11 @@ const minCitesDropdown = enhanceSelect(minCitesSelect);
 let topicDropdown: CustomDropdown | null = enhanceSelect(topicSelect);
 
 applyTheme(initialTheme);
+try {
+  applyOfflineMode(localStorage.getItem(OFFLINE_KEY) === "1");
+} catch {
+  applyOfflineMode(false);
+}
 applyPanelLayout();
 renderHistory();
 updateUndoButton();

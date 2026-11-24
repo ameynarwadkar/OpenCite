@@ -298,6 +298,99 @@ def test_bib_upload_endpoint():
         app.dependency_overrides.clear()
 
 
+def test_ris_upload_endpoint():
+    resolver = _make_mock_resolver()
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+        ris_content = b"""TY  - CONF
+TI  - Attention Is All You Need
+AU  - Vaswani, Ashish
+AU  - Shazeer, Noam
+PY  - 2017/12/04
+JO  - NeurIPS
+DO  - 10.48550/arxiv.1706.03762
+ER  -
+
+TY  - JOUR
+TI  - Local RIS Paper With Abstract
+AU  - Doe, Jane
+PY  - 2024
+JO  - Journal of Testing
+AB  - This abstract is stored directly inside the RIS record.
+ER  -
+"""
+        resp = client.post(
+            "/api/papers/ris",
+            files=[("files", ("library.ris", ris_content, "application/x-research-info-systems"))],
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["nodes"]) == 3
+        assert len(data["edges"]) == 2
+        ids = {n["id"] for n in data["nodes"]}
+        assert "doi:10.48550/arxiv.1706.03762" in ids
+        local_node = next(n for n in data["nodes"] if n["title"] == "Local RIS Paper With Abstract")
+        assert local_node["year"] == 2024
+        assert local_node["abstract"] == "This abstract is stored directly inside the RIS record."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_offline_mode_makes_zero_external_http_calls():
+    def fail_on_any_request(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"Unexpected outbound HTTP call in offline mode: {request.url}")
+
+    resolver = PaperResolver(
+        client=httpx.AsyncClient(transport=httpx.MockTransport(fail_on_any_request))
+    )
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+
+        # 1. PDF upload with offline=true
+        pdf_bytes = _make_sample_pdf_bytes()
+        pdf_resp = client.post(
+            "/api/papers/pdf?offline=true",
+            files=[("files", ("paper.pdf", pdf_bytes, "application/pdf"))],
+        )
+        assert pdf_resp.status_code == 200
+        assert len(pdf_resp.json()["nodes"]) >= 1
+
+        # 2. BibTeX upload with offline=true
+        bib_content = b"""
+        @article{offline2024,
+          title = {Offline BibTeX Paper},
+          author = {Alice Smith},
+          year = {2024},
+          doi = {10.48550/arxiv.1706.03762}
+        }
+        """
+        bib_resp = client.post(
+            "/api/papers/bib?offline=true",
+            files=[("files", ("offline.bib", bib_content, "text/plain"))],
+        )
+        assert bib_resp.status_code == 200
+        assert len(bib_resp.json()["nodes"]) == 2
+
+        # 3. RIS upload with offline=true
+        ris_content = b"""TY  - JOUR
+TI  - Offline RIS Paper
+AU  - Smith, Alice
+PY  - 2024
+DO  - 10.48550/arxiv.1706.03762
+ER  -
+"""
+        ris_resp = client.post(
+            "/api/papers/ris?offline=true",
+            files=[("files", ("offline.ris", ris_content, "text/plain"))],
+        )
+        assert ris_resp.status_code == 200
+        assert len(ris_resp.json()["nodes"]) == 2
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_serves_frontend_index_and_static_assets():
     client = TestClient(app)
     index_resp = client.get("/")

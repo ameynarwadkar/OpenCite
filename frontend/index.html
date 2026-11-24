@@ -34,6 +34,11 @@
       </div>
 
       <div class="nav-right">
+        <button id="offline-toggle-btn" class="btn btn-outline btn-sm" type="button" title="Strict Local-Only mode (blocks all outbound API requests)">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Local only</span>
+        </button>
+        <button id="export-bib-btn" class="btn btn-outline btn-sm" type="button" title="Export visible papers as BibTeX">BibTeX</button>
         <button id="export-svg-btn" class="btn btn-outline btn-sm" type="button" title="Export vector SVG">SVG</button>
         <button id="export-png-btn" class="btn btn-outline btn-sm" type="button" title="Export graph as PNG">PNG</button>
         <button id="export-btn" class="btn btn-outline btn-sm" type="button" title="Export graph as JSON">JSON</button>
@@ -51,10 +56,10 @@
         <!-- Add Papers -->
         <section class="section">
           <span class="label">Add papers</span>
-          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload PDF or BibTeX files">
-            <input id="pdf-input" type="file" accept=".pdf,.bib,application/pdf,text/plain" multiple hidden />
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload PDF, BibTeX, or RIS files">
+            <input id="pdf-input" type="file" accept=".pdf,.bib,.ris,application/pdf,text/plain" multiple hidden />
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span>Drop PDF or .bib</span>
+            <span>Drop PDF, .bib, or .ris</span>
           </div>
           <textarea id="id-input" rows="2" placeholder="DOI or arXiv ID&#10;1706.03762"></textarea>
           <div class="btn-row">

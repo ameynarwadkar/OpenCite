@@ -387,6 +387,19 @@ textarea:focus,
   border-color: var(--border-strong);
 }
 
+.btn-outline.active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-bg);
+}
+
+.toast-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .btn-full {
   width: 100%;
 }

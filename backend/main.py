@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -29,6 +29,7 @@ from backend.resolver import (
     PaperResolver,
     openalex_work_to_node,
 )
+from backend.ris_parser import RisParseError, parse_ris_text
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
@@ -74,6 +75,7 @@ def _lookup_key_for_doi_enrichment(doi: str | None, arxiv_id: str | None) -> str
 @app.post("/api/papers/pdf", response_model=GraphPayload)
 async def ingest_pdfs(
     files: list[UploadFile] = File(...),
+    offline: bool = Query(default=False),
     resolver: PaperResolver = Depends(get_resolver),
 ) -> GraphPayload:
     if not files:
@@ -97,24 +99,24 @@ async def ingest_pdfs(
         raise HTTPException(status_code=422, detail=" ".join(errors))
     warnings.extend(errors)
 
-    # Batch-enrich any seeds or references that carry a DOI or arXiv ID
-    dois_to_enrich: list[str] = []
-    for paper in parsed_papers:
-        if key := _lookup_key_for_doi_enrichment(paper.doi, paper.arxiv_id):
-            dois_to_enrich.append(key)
-        for ref in paper.references:
-            if key := _lookup_key_for_doi_enrichment(ref.doi, ref.arxiv_id):
+    enriched_by_doi: dict[str, dict] = {}
+    if not offline:
+        dois_to_enrich: list[str] = []
+        for paper in parsed_papers:
+            if key := _lookup_key_for_doi_enrichment(paper.doi, paper.arxiv_id):
                 dois_to_enrich.append(key)
+            for ref in paper.references:
+                if key := _lookup_key_for_doi_enrichment(ref.doi, ref.arxiv_id):
+                    dois_to_enrich.append(key)
 
-    enriched_by_doi = (
-        await resolver.fetch_works_by_dois(dois_to_enrich) if dois_to_enrich else {}
-    )
+        if dois_to_enrich:
+            enriched_by_doi = await resolver.fetch_works_by_dois(dois_to_enrich)
 
     gb = GraphBuilder()
     for paper in parsed_papers:
         seed_key = _lookup_key_for_doi_enrichment(paper.doi, paper.arxiv_id)
         seed_work = enriched_by_doi.get(seed_key) if seed_key else None
-        if seed_work is None and paper.title:
+        if not offline and seed_work is None and paper.title:
             seed_work = await resolver.resolve_by_title(paper.title, year=paper.year)
 
         if seed_work is not None:
@@ -170,6 +172,7 @@ async def ingest_pdfs(
 @app.post("/api/papers/bib", response_model=GraphPayload)
 async def ingest_bib(
     files: list[UploadFile] = File(...),
+    offline: bool = Query(default=False),
     resolver: PaperResolver = Depends(get_resolver),
 ) -> GraphPayload:
     """Import one or more BibTeX (.bib) files and enrich DOI/arXiv entries via OpenAlex."""
@@ -195,15 +198,15 @@ async def ingest_bib(
         raise HTTPException(status_code=422, detail=" ".join(errors))
     warnings.extend(errors)
 
-    dois_to_enrich: list[str] = []
-    for _, entries in parsed_batches:
-        for entry in entries:
-            if key := _lookup_key_for_doi_enrichment(entry.doi, entry.arxiv_id):
-                dois_to_enrich.append(key)
-
-    enriched_by_doi = (
-        await resolver.fetch_works_by_dois(dois_to_enrich) if dois_to_enrich else {}
-    )
+    enriched_by_doi: dict[str, dict] = {}
+    if not offline:
+        dois_to_enrich: list[str] = []
+        for _, entries in parsed_batches:
+            for entry in entries:
+                if key := _lookup_key_for_doi_enrichment(entry.doi, entry.arxiv_id):
+                    dois_to_enrich.append(key)
+        if dois_to_enrich:
+            enriched_by_doi = await resolver.fetch_works_by_dois(dois_to_enrich)
 
     for filename, entries in parsed_batches:
         collection_node = PaperNode(
@@ -231,6 +234,83 @@ async def ingest_bib(
                     doi=entry.doi,
                     arxiv_id=entry.arxiv_id,
                     url=entry.url,
+                    is_seed=False,
+                    is_expanded=False,
+                )
+            ref_id = gb.add_node(node)
+            gb.add_edge(seed_id, ref_id)
+
+    return gb.build(warnings=warnings)
+
+
+@app.post("/api/papers/ris", response_model=GraphPayload)
+async def ingest_ris(
+    files: list[UploadFile] = File(...),
+    offline: bool = Query(default=False),
+    resolver: PaperResolver = Depends(get_resolver),
+) -> GraphPayload:
+    """Import one or more RIS (.ris) files from PubMed, Scopus, Web of Science, or EndNote."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Please upload at least one .ris file.")
+
+    gb = GraphBuilder()
+    warnings: list[str] = []
+    errors: list[str] = []
+    parsed_batches: list[tuple[str, list]] = []
+
+    for upload in files:
+        filename = upload.filename or "references.ris"
+        raw = await upload.read()
+        try:
+            text = raw.decode("utf-8", errors="replace")
+            entries = parse_ris_text(text, filename=filename)
+            parsed_batches.append((filename, entries))
+        except RisParseError as exc:
+            errors.append(str(exc))
+
+    if not parsed_batches:
+        raise HTTPException(status_code=422, detail=" ".join(errors))
+    warnings.extend(errors)
+
+    enriched_by_doi: dict[str, dict] = {}
+    if not offline:
+        dois_to_enrich: list[str] = []
+        for _, entries in parsed_batches:
+            for entry in entries:
+                if key := _lookup_key_for_doi_enrichment(entry.doi, entry.arxiv_id):
+                    dois_to_enrich.append(key)
+        if dois_to_enrich:
+            enriched_by_doi = await resolver.fetch_works_by_dois(dois_to_enrich)
+
+    for filename, entries in parsed_batches:
+        collection_node = PaperNode(
+            id="tmp",
+            title=filename,
+            is_seed=True,
+            is_expanded=True,
+            expandable=False,
+        )
+        seed_id = gb.add_node(collection_node)
+
+        for entry in entries:
+            key = _lookup_key_for_doi_enrichment(entry.doi, entry.arxiv_id)
+            if key and key in enriched_by_doi:
+                node = openalex_work_to_node(
+                    enriched_by_doi[key], is_seed=False, is_expanded=False
+                )
+                if not node.abstract and entry.abstract:
+                    node = node.model_copy(update={"abstract": entry.abstract})
+            else:
+                node = PaperNode(
+                    id="tmp",
+                    title=entry.title,
+                    authors=entry.authors,
+                    year=entry.year,
+                    venue=entry.venue,
+                    doi=entry.doi,
+                    arxiv_id=entry.arxiv_id,
+                    url=entry.url,
+                    abstract=entry.abstract,
                     is_seed=False,
                     is_expanded=False,
                 )

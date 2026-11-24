@@ -16,22 +16,34 @@ async function parseJsonOrThrow<T>(resp: Response, fallbackMsg: string): Promise
   return data as T;
 }
 
-export async function apiUploadPdfs(files: File[]): Promise<GraphPayload> {
+export async function apiUploadPdfs(files: File[], offline = false): Promise<GraphPayload> {
   const form = new FormData();
   for (const file of files) {
     form.append("files", file);
   }
-  const resp = await fetch("/api/papers/pdf", { method: "POST", body: form });
+  const url = offline ? "/api/papers/pdf?offline=true" : "/api/papers/pdf";
+  const resp = await fetch(url, { method: "POST", body: form });
   return parseJsonOrThrow<GraphPayload>(resp, "Failed to parse PDF.");
 }
 
-export async function apiUploadBibs(files: File[]): Promise<GraphPayload> {
+export async function apiUploadBibs(files: File[], offline = false): Promise<GraphPayload> {
   const form = new FormData();
   for (const file of files) {
     form.append("files", file);
   }
-  const resp = await fetch("/api/papers/bib", { method: "POST", body: form });
+  const url = offline ? "/api/papers/bib?offline=true" : "/api/papers/bib";
+  const resp = await fetch(url, { method: "POST", body: form });
   return parseJsonOrThrow<GraphPayload>(resp, "Failed to parse .bib file.");
+}
+
+export async function apiUploadRis(files: File[], offline = false): Promise<GraphPayload> {
+  const form = new FormData();
+  for (const file of files) {
+    form.append("files", file);
+  }
+  const url = offline ? "/api/papers/ris?offline=true" : "/api/papers/ris";
+  const resp = await fetch(url, { method: "POST", body: form });
+  return parseJsonOrThrow<GraphPayload>(resp, "Failed to parse .ris file.");
 }
 
 export async function apiLookupIdentifiers(identifiers: string[]): Promise<GraphPayload> {
