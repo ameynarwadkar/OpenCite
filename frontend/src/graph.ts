@@ -1,11 +1,13 @@
 import cytoscape, { type Core, type LayoutOptions, type NodeSingular } from "cytoscape";
 import elk from "cytoscape-elk";
 import fcose from "cytoscape-fcose";
+import svg from "cytoscape-svg";
 import { formatCompactLabel, formatFullLabel, type GraphStore } from "./store";
 import type { GraphFilters, LabelMode, LayoutMode, ThemeMode } from "./types";
 
 cytoscape.use(fcose);
 cytoscape.use(elk);
+cytoscape.use(svg);
 
 export interface GraphViewCallbacks {
   onSelectNode: (nodeId: string) => void;
@@ -503,7 +505,10 @@ export class CitationGraphView {
     this.cy.batch(() => {
       this.cy.elements().remove();
 
-      const visibleIds = new Set<string>();
+      // First pass: collect all candidate nodes passing the active filters
+      const seedIds: string[] = [];
+      const nonSeedCandidates: Array<{ id: string; score: number }> = [];
+
       for (const [id, node] of this.store.nodes.entries()) {
         if (this.store.hiddenIds.has(id)) continue;
         const deg = inDeg.get(id) ?? 0;
@@ -541,7 +546,29 @@ export class CitationGraphView {
           if (!(node.topics ?? []).includes(filters.topic)) continue;
         }
 
-        visibleIds.add(id);
+        if (node.is_seed) {
+          seedIds.push(id);
+        } else {
+          const score = deg * 3 + Math.log10((node.cited_by_count ?? 0) + 1);
+          nonSeedCandidates.push({ id, score });
+        }
+      }
+
+      // Apply Graph Density cap (keep all seeds + top N ranked non-seed papers)
+      let keptNonSeedIds: string[];
+      if (filters.maxNodes !== null && nonSeedCandidates.length > filters.maxNodes) {
+        nonSeedCandidates.sort((a, b) => b.score - a.score);
+        keptNonSeedIds = nonSeedCandidates.slice(0, filters.maxNodes).map((c) => c.id);
+      } else {
+        keptNonSeedIds = nonSeedCandidates.map((c) => c.id);
+      }
+
+      const visibleIds = new Set<string>([...seedIds, ...keptNonSeedIds]);
+
+      for (const id of visibleIds) {
+        const node = this.store.nodes.get(id)!;
+        const deg = inDeg.get(id) ?? 0;
+        const isShared = deg >= sharedThreshold && !node.is_seed;
 
         let size: number;
         if (node.is_seed) {
@@ -776,6 +803,13 @@ export class CitationGraphView {
   fit(): void {
     this.cy.fit(undefined, 56);
     this.updateLabelVisibility();
+  }
+
+  exportSvg(bg: string): string {
+    const cyWithSvg = this.cy as Core & {
+      svg: (opts?: { full?: boolean; scale?: number; bg?: string }) => string;
+    };
+    return cyWithSvg.svg({ full: true, scale: 1, bg });
   }
 
   highlightPath(nodeIds: string[], edgeKeys: string[]): void {

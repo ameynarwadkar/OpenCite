@@ -9,3 +9,9 @@ declare module "cytoscape-elk" {
   const elk: Ext;
   export default elk;
 }
+
+declare module "cytoscape-svg" {
+  import type { Ext } from "cytoscape";
+  const svg: Ext;
+  export default svg;
+}

@@ -76,6 +76,7 @@ export interface GraphFilters {
   relevance: RelevanceMode;
   direction: DirectionMode;
   depth: DepthMode;
+  maxNodes: number | null;
   minYear: number | null;
   maxYear: number | null;
   minCitations: number;

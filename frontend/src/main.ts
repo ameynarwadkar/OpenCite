@@ -49,6 +49,7 @@ const toggleRightBtn = byId<HTMLButtonElement>("toggle-right-btn");
 const tabWorkspaceBtn = byId<HTMLButtonElement>("tab-workspace-btn");
 const tabDiscoverBtn = byId<HTMLButtonElement>("tab-discover-btn");
 const themeToggle = byId<HTMLButtonElement>("theme-toggle");
+const exportSvgBtn = byId<HTMLButtonElement>("export-svg-btn");
 const exportPngBtn = byId<HTMLButtonElement>("export-png-btn");
 const exportBtn = byId<HTMLButtonElement>("export-btn");
 const searchInput = byId<HTMLInputElement>("search-input");
@@ -69,6 +70,7 @@ const seedList = byId<HTMLUListElement>("seed-list");
 const resetFiltersBtn = byId<HTMLButtonElement>("reset-filters-btn");
 const relevanceSelect = byId<HTMLSelectElement>("relevance-select");
 const directionSelect = byId<HTMLSelectElement>("direction-select");
+const densitySelect = byId<HTMLSelectElement>("density-select");
 const depthSelect = byId<HTMLSelectElement>("depth-select");
 const sizeModeSelect = byId<HTMLSelectElement>("size-mode-select");
 const minYearInput = byId<HTMLInputElement>("min-year-input");
@@ -295,10 +297,12 @@ function formatCompactCount(n: number | null): string {
 function getCurrentFilters(): GraphFilters {
   const minY = parseInt(minYearInput.value, 10);
   const maxY = parseInt(maxYearInput.value, 10);
+  const maxN = densitySelect.value === "all" ? null : parseInt(densitySelect.value, 10);
   return {
     relevance: relevanceSelect.value as RelevanceMode,
     direction: directionSelect.value as DirectionMode,
     depth: depthSelect.value as DepthMode,
+    maxNodes: maxN !== null && !Number.isNaN(maxN) ? maxN : null,
     minYear: Number.isNaN(minY) ? null : minY,
     maxYear: Number.isNaN(maxY) ? null : maxY,
     minCitations: parseInt(minCitesSelect.value, 10) || 0,
@@ -313,6 +317,7 @@ function updateFilterResetVisibility(): void {
     f.relevance !== "all" ||
     f.direction !== "both" ||
     f.depth !== "all" ||
+    f.maxNodes !== null ||
     f.minYear !== null ||
     f.maxYear !== null ||
     f.minCitations > 0 ||
@@ -1279,6 +1284,7 @@ labelModeSelect.addEventListener("change", () =>
 );
 relevanceSelect.addEventListener("change", () => renderAll());
 directionSelect.addEventListener("change", () => renderAll());
+densitySelect.addEventListener("change", () => renderAll());
 depthSelect.addEventListener("change", () => renderAll());
 sizeModeSelect.addEventListener("change", () => renderAll());
 minCitesSelect.addEventListener("change", () => renderAll());
@@ -1288,6 +1294,7 @@ maxYearInput.addEventListener("input", () => renderAll());
 resetFiltersBtn.addEventListener("click", () => {
   relevanceSelect.value = "all";
   directionSelect.value = "both";
+  densitySelect.value = "all";
   depthSelect.value = "all";
   sizeModeSelect.value = "degree";
   minCitesSelect.value = "0";
@@ -1296,6 +1303,7 @@ resetFiltersBtn.addEventListener("click", () => {
   maxYearInput.value = "";
   relevanceDropdown.sync();
   directionDropdown.sync();
+  densityDropdown.sync();
   depthDropdown.sync();
   sizeDropdown.sync();
   minCitesDropdown.sync();
@@ -1320,6 +1328,22 @@ zoomOutBtn.addEventListener("click", () => {
   const cy = graphView.cy;
   const center = { x: cy.width() / 2, y: cy.height() / 2 };
   cy.zoom({ level: Math.max(0.1, cy.zoom() / 1.3), renderedPosition: center });
+});
+
+exportSvgBtn.addEventListener("click", () => {
+  if (store.nodes.size === 0) {
+    showMessages(["Graph is empty."], true);
+    return;
+  }
+  const isDark = document.documentElement.dataset.theme === "dark";
+  const svgContent = graphView.exportSvg(isDark ? "#09090b" : "#fafafa");
+  const blob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "citation-graph.svg";
+  a.click();
+  URL.revokeObjectURL(url);
 });
 
 exportPngBtn.addEventListener("click", () => {
@@ -1463,6 +1487,7 @@ enhanceSelect(labelModeSelect);
 enhanceSelect(discoverSortSelect);
 const relevanceDropdown = enhanceSelect(relevanceSelect);
 const directionDropdown = enhanceSelect(directionSelect);
+const densityDropdown = enhanceSelect(densitySelect);
 const depthDropdown = enhanceSelect(depthSelect);
 const sizeDropdown = enhanceSelect(sizeModeSelect);
 const minCitesDropdown = enhanceSelect(minCitesSelect);

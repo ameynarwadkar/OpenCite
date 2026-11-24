@@ -34,6 +34,7 @@
       </div>
 
       <div class="nav-right">
+        <button id="export-svg-btn" class="btn btn-outline btn-sm" type="button" title="Export vector SVG">SVG</button>
         <button id="export-png-btn" class="btn btn-outline btn-sm" type="button" title="Export graph as PNG">PNG</button>
         <button id="export-btn" class="btn btn-outline btn-sm" type="button" title="Export graph as JSON">JSON</button>
         <button id="theme-toggle" class="icon-btn" type="button" title="Toggle theme" aria-label="Toggle theme"></button>
@@ -86,6 +87,13 @@
               <option value="both">Direction: Both</option>
               <option value="cites">Cites only (← older)</option>
               <option value="cited-by">Cited by only (→ newer)</option>
+            </select>
+
+            <select id="density-select" class="control filter-select" title="Max non-seed papers shown">
+              <option value="all">Density: All papers</option>
+              <option value="20">Top 20 papers</option>
+              <option value="40">Top 40 papers</option>
+              <option value="60">Top 60 papers</option>
             </select>
 
             <div class="filter-row-2">
