@@ -1,0 +1,106 @@
+name: Build Desktop Releases
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+      - name: Install backend + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+      - name: Build OpenCite-windows.exe
+        run: |
+          pyinstaller --noconfirm --onefile --name OpenCite-windows `
+            --add-data "frontend/dist;frontend/dist" `
+            --add-data "static;static" `
+            --hidden-import "uvicorn.logging" `
+            --hidden-import "uvicorn.loops.auto" `
+            --hidden-import "uvicorn.protocols.http.auto" `
+            --hidden-import "uvicorn.lifespan.on" `
+            launcher.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenCite-windows
+          path: dist/OpenCite-windows.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+      - name: Install backend + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+      - name: Build OpenCite macOS app
+        run: |
+          pyinstaller --noconfirm --onefile --name OpenCite-macos \
+            --add-data "frontend/dist:frontend/dist" \
+            --add-data "static:static" \
+            --hidden-import "uvicorn.logging" \
+            --hidden-import "uvicorn.loops.auto" \
+            --hidden-import "uvicorn.protocols.http.auto" \
+            --hidden-import "uvicorn.lifespan.on" \
+            launcher.py
+          cd dist && zip -r OpenCite-macos.zip OpenCite-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenCite-macos
+          path: dist/OpenCite-macos.zip
+
+  package-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip browser extension
+        run: |
+          cd extension && zip -r ../OpenCite-extension.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenCite-extension
+          path: OpenCite-extension.zip
+
+  publish-release:
+    needs: [build-windows, build-macos, package-extension]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true

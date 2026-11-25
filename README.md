@@ -58,6 +58,22 @@ cd frontend; npm install; npm run build; cd ..
 Open **http://127.0.0.1:8000** in your browser.  
 For frontend hot-reload during development, run `npm run dev` inside `frontend/` (proxies `/api` to `:8000`).
 
+## Browser Extension (Chrome / Edge / Firefox)
+
+OpenCite includes a Manifest V3 browser extension in [`extension/`](extension/) that adds a floating **`Open in OpenCite ↗`** button on **arXiv**, **alphaXiv**, **PubMed**, **Nature**, **Science**, **bioRxiv**, **ACM**, **IEEE**, **Springer**, and **DOI** pages:
+
+1. **Chrome / Edge / Brave:** Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `extension/` folder.
+2. **Firefox:** Open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on**, and select `extension/manifest.json`.
+3. Click the extension icon to point it at `http://127.0.0.1:8000` (local) or your hosted Hugging Face Space URL.
+
+## One-Click Local Desktop App (`.exe` / macOS)
+
+For researchers who want to run OpenCite locally (including strict **`Local only`** offline mode) without installing Python or Node.js:
+
+- **Build on Windows:** Run `.\scripts\build_desktop.ps1` → creates a standalone `dist\OpenCite.exe` (double-click to start the local server and open your browser automatically).
+- **Build on macOS / Linux:** Run `./scripts/build_desktop.sh` → creates `dist/OpenCite`.
+- **Automated Releases:** Pushing a git tag (e.g., `git tag v0.5.0 && git push origin v0.5.0`) triggers [`.github/workflows/release-desktop.yml`](.github/workflows/release-desktop.yml) to build and attach Windows, macOS, and Browser Extension bundles directly to a GitHub Release.
+
 ## Deploying with Docker (Free on Hugging Face Spaces / Render)
 
 OpenCite includes a multi-stage `Dockerfile` (builds the TypeScript frontend and serves FastAPI on port `7860` or `$PORT`):

@@ -1591,3 +1591,17 @@ try {
 applyPanelLayout();
 renderHistory();
 updateUndoButton();
+
+// Auto-load paper(s) when opened via browser extension or shareable link (?id=... or ?ids=...)
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const incoming = (params.get("id") || params.get("ids") || "").trim();
+  if (!incoming) return;
+  idInput.value = incoming;
+  window.history.replaceState({}, "", window.location.pathname);
+  if (offlineMode) {
+    showMessages([`Received "${incoming}" — disable Local-only mode to fetch it.`]);
+  } else {
+    void handleLookup(incoming);
+  }
+})();

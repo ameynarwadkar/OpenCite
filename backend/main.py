@@ -4,6 +4,7 @@ import asyncio
 from collections import defaultdict, deque
 import os
 from pathlib import Path
+import sys
 import time
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -34,7 +35,7 @@ from backend.resolver import (
 )
 from backend.ris_parser import RisParseError, parse_ris_text
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
 STATIC_DIR = ROOT_DIR / "static"
 

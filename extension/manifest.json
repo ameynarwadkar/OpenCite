@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "OpenCite — Open in Citation Graph",
+  "version": "0.5.0",
+  "description": "Adds a one-click 'Open in OpenCite' button on arXiv, alphaXiv, PubMed, and academic paper pages.",
+  "permissions": ["storage", "activeTab"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OpenCite Settings"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://arxiv.org/abs/*",
+        "https://arxiv.org/pdf/*",
+        "https://alphaxiv.org/abs/*",
+        "https://www.alphaxiv.org/abs/*",
+        "https://pubmed.ncbi.nlm.nih.gov/*",
+        "https://doi.org/*",
+        "https://dx.doi.org/*",
+        "https://aclanthology.org/*",
+        "https://openreview.net/forum*",
+        "https://www.semanticscholar.org/paper/*",
+        "https://www.nature.com/articles/*",
+        "https://www.science.org/doi/*",
+        "https://www.biorxiv.org/content/*",
+        "https://www.medrxiv.org/content/*",
+        "https://dl.acm.org/doi/*",
+        "https://ieeexplore.ieee.org/document/*",
+        "https://link.springer.com/article/*",
+        "https://www.sciencedirect.com/science/article/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "opencite@local.dev",
+      "strict_min_version": "109.0"
+    }
+  }
+}
