@@ -1,0 +1,15 @@
+.git/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+tests/
+docs/
+*.mp4
+demo.gif
+Brainstorm.md
+TODO.md
+COMPETITOR_ISSUES_AND_GAPS.md
+.DS_Store

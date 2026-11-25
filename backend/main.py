@@ -35,8 +35,32 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
 STATIC_DIR = ROOT_DIR / "static"
 
-app = FastAPI(title="Minimal Citation Graph", version="0.2.0")
+app = FastAPI(title="OpenCite", version="0.4.0")
 _default_resolver = PaperResolver()
+
+MAX_UPLOAD_FILES = 5
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB per file
+
+
+async def _read_upload_limited(upload: UploadFile) -> bytes:
+    data = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        name = upload.filename or "file"
+        raise HTTPException(
+            status_code=413,
+            detail=f"{name} exceeds the 20 MB per-file upload limit.",
+        )
+    return data
+
+
+def _validate_upload_count(files: list[UploadFile], kind: str) -> None:
+    if not files:
+        raise HTTPException(status_code=400, detail=f"Please upload at least one {kind} file.")
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Upload at most {MAX_UPLOAD_FILES} files per request.",
+        )
 
 
 def get_resolver() -> PaperResolver:
@@ -51,6 +75,11 @@ if (FRONTEND_DIST_DIR / "assets").exists():
     )
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.get("/", include_in_schema=False)
@@ -78,8 +107,7 @@ async def ingest_pdfs(
     offline: bool = Query(default=False),
     resolver: PaperResolver = Depends(get_resolver),
 ) -> GraphPayload:
-    if not files:
-        raise HTTPException(status_code=400, detail="Please upload at least one PDF file.")
+    _validate_upload_count(files, "PDF")
 
     parsed_papers: list[ParsedPdfPaper] = []
     warnings: list[str] = []
@@ -87,7 +115,7 @@ async def ingest_pdfs(
 
     for upload in files:
         filename = upload.filename or "paper.pdf"
-        content = await upload.read()
+        content = await _read_upload_limited(upload)
         try:
             parsed = parse_pdf_bytes(content, filename=filename)
             parsed_papers.append(parsed)
@@ -176,8 +204,7 @@ async def ingest_bib(
     resolver: PaperResolver = Depends(get_resolver),
 ) -> GraphPayload:
     """Import one or more BibTeX (.bib) files and enrich DOI/arXiv entries via OpenAlex."""
-    if not files:
-        raise HTTPException(status_code=400, detail="Please upload at least one .bib file.")
+    _validate_upload_count(files, ".bib")
 
     gb = GraphBuilder()
     warnings: list[str] = []
@@ -186,7 +213,7 @@ async def ingest_bib(
 
     for upload in files:
         filename = upload.filename or "references.bib"
-        raw = await upload.read()
+        raw = await _read_upload_limited(upload)
         try:
             text = raw.decode("utf-8", errors="replace")
             entries = parse_bib_text(text, filename=filename)
@@ -250,8 +277,7 @@ async def ingest_ris(
     resolver: PaperResolver = Depends(get_resolver),
 ) -> GraphPayload:
     """Import one or more RIS (.ris) files from PubMed, Scopus, Web of Science, or EndNote."""
-    if not files:
-        raise HTTPException(status_code=400, detail="Please upload at least one .ris file.")
+    _validate_upload_count(files, ".ris")
 
     gb = GraphBuilder()
     warnings: list[str] = []
@@ -260,7 +286,7 @@ async def ingest_ris(
 
     for upload in files:
         filename = upload.filename or "references.ris"
-        raw = await upload.read()
+        raw = await _read_upload_limited(upload)
         try:
             text = raw.decode("utf-8", errors="replace")
             entries = parse_ris_text(text, filename=filename)

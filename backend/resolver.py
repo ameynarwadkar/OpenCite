@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
+import os
 import re
 import xml.etree.ElementTree as ET
 
@@ -21,7 +22,10 @@ OPENALEX_API = "https://api.openalex.org"
 CROSSREF_API = "https://api.crossref.org/works"
 ARXIV_API = "https://export.arxiv.org/api/query"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
-USER_AGENT = "citation-graph/0.1 (mailto:citation-graph@local.dev)"
+OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "opencite@local.dev").strip() or "opencite@local.dev"
+OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "").strip()
+S2_API_KEY = os.getenv("S2_API_KEY", "").strip()
+USER_AGENT = f"OpenCite/0.4 (mailto:{OPENALEX_MAILTO})"
 WORK_SELECT_FIELDS = (
     "id,doi,ids,title,publication_year,cited_by_count,is_retracted,abstract_inverted_index,topics,authorships,primary_location,referenced_works"
 )
@@ -206,9 +210,19 @@ class PaperResolver:
     async def _get_json(
         self, client: httpx.AsyncClient, url: str, params: dict | None = None
     ) -> dict | None:
+        req_params = dict(params) if params else {}
+        req_headers: dict[str, str] = {}
+        if OPENALEX_API_KEY and url.startswith(OPENALEX_API) and "api_key" not in req_params:
+            req_params["api_key"] = OPENALEX_API_KEY
+        if S2_API_KEY and url.startswith(SEMANTIC_SCHOLAR_API):
+            req_headers["x-api-key"] = S2_API_KEY
         for attempt in range(3):
             try:
-                resp = await client.get(url, params=params)
+                resp = await client.get(
+                    url,
+                    params=req_params or None,
+                    headers=req_headers or None,
+                )
                 if resp.status_code == 200:
                     return resp.json()
                 if resp.status_code == 404:

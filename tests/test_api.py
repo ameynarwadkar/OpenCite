@@ -391,6 +391,21 @@ ER  -
         app.dependency_overrides.clear()
 
 
+def test_healthz_and_upload_limits():
+    client = TestClient(app)
+    health = client.get("/healthz")
+    assert health.status_code == 200
+    assert health.json() == {"status": "ok"}
+
+    too_many = [
+        ("files", (f"f{i}.ris", b"TY  - JOUR\nTI  - Test\nER  -\n", "text/plain"))
+        for i in range(6)
+    ]
+    resp = client.post("/api/papers/ris?offline=true", files=too_many)
+    assert resp.status_code == 400
+    assert "at most 5" in resp.json()["detail"].lower()
+
+
 def test_serves_frontend_index_and_static_assets():
     client = TestClient(app)
     index_resp = client.get("/")
