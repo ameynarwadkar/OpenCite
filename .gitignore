@@ -7,3 +7,8 @@ dist/
 build/
 frontend/node_modules/
 .DS_Store
+*.mp4
+Brainstorm.md
+TODO.md
+COMPETITOR_ISSUES_AND_GAPS.md
+docs/
