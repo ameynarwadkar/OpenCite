@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict, deque
+import os
 from pathlib import Path
+import time
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.bib_parser import BibParseError, parse_bib_text
@@ -40,6 +43,39 @@ _default_resolver = PaperResolver()
 
 MAX_UPLOAD_FILES = 5
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB per file
+
+RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+_rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
+
+
+def reset_rate_limiter() -> None:
+    _rate_limit_buckets.clear()
+
+
+@app.middleware("http")
+async def api_rate_limit_middleware(request: Request, call_next):
+    if RATE_LIMIT_REQUESTS > 0 and request.url.path.startswith("/api/"):
+        forwarded = request.headers.get("x-forwarded-for", "")
+        client_ip = (
+            forwarded.split(",")[0].strip()
+            if forwarded
+            else (request.client.host if request.client else "unknown")
+        )
+        now = time.monotonic()
+        bucket = _rate_limit_buckets[client_ip]
+        cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        if len(bucket) >= RATE_LIMIT_REQUESTS:
+            retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Please wait a moment and try again."},
+                headers={"Retry-After": str(retry_after)},
+            )
+        bucket.append(now)
+    return await call_next(request)
 
 
 async def _read_upload_limited(upload: UploadFile) -> bytes:
@@ -406,13 +442,43 @@ async def expand_paper(
         work = await resolver.resolve_by_title(node.title, year=node.year)
 
     if work is None:
+        s2_refs = await resolver.fetch_semantic_scholar_neighbors(
+            relation="references",
+            doi=node.doi,
+            arxiv_id=node.arxiv_id,
+            title=node.title,
+            limit=min(MAX_REFERENCES_PER_PAPER, 100),
+        )
+        if not s2_refs:
+            return ExpandResponse(
+                source_id=node.id,
+                nodes=[],
+                edges=[],
+                warnings=[
+                    f"Could not match '{node.title or node.id}' in OpenAlex or Semantic Scholar to expand its citations."
+                ],
+            )
+        gb = GraphBuilder()
+        source_node = PaperNode(
+            id=node.id,
+            title=node.title or "Untitled Paper",
+            year=node.year,
+            doi=node.doi,
+            arxiv_id=node.arxiv_id,
+            openalex_id=node.openalex_id,
+            is_seed=False,
+            is_expanded=True,
+        )
+        source_id = gb.add_node(source_node)
+        for ref_node in s2_refs:
+            ref_id = gb.add_node(ref_node)
+            gb.add_edge(source_id, ref_id)
+        built = gb.build(warnings=["Expanded references via Semantic Scholar fallback."])
         return ExpandResponse(
-            source_id=node.id,
-            nodes=[],
-            edges=[],
-            warnings=[
-                f"Could not match '{node.title or node.id}' in OpenAlex to expand its citations."
-            ],
+            source_id=source_id,
+            nodes=built.nodes,
+            edges=built.edges,
+            warnings=built.warnings,
         )
 
     gb = GraphBuilder()
@@ -420,9 +486,7 @@ async def expand_paper(
     source_id = gb.add_node(source_node)
 
     ref_oa_ids = work.get("referenced_works") or []
-    if not ref_oa_ids:
-        warnings.append(f"No outgoing references indexed in OpenAlex for '{source_node.title}'.")
-    elif len(ref_oa_ids) > MAX_REFERENCES_PER_PAPER:
+    if len(ref_oa_ids) > MAX_REFERENCES_PER_PAPER:
         warnings.append(
             f"'{source_node.title}' has {len(ref_oa_ids)} references; showing first {MAX_REFERENCES_PER_PAPER}."
         )
@@ -432,6 +496,24 @@ async def expand_paper(
         ref_node = openalex_work_to_node(ref_work, is_seed=False, is_expanded=False)
         ref_id = gb.add_node(ref_node)
         gb.add_edge(source_id, ref_id)
+
+    if not ref_works:
+        s2_refs = await resolver.fetch_semantic_scholar_neighbors(
+            relation="references",
+            doi=source_node.doi or node.doi,
+            arxiv_id=source_node.arxiv_id or node.arxiv_id,
+            title=source_node.title or node.title,
+            limit=min(MAX_REFERENCES_PER_PAPER, 100),
+        )
+        if s2_refs:
+            for ref_node in s2_refs:
+                ref_id = gb.add_node(ref_node)
+                gb.add_edge(source_id, ref_id)
+            warnings.append("Expanded references via Semantic Scholar fallback.")
+        else:
+            warnings.append(
+                f"No outgoing references indexed in OpenAlex or Semantic Scholar for '{source_node.title}'."
+            )
 
     built = gb.build(warnings=warnings)
     return ExpandResponse(
@@ -461,14 +543,46 @@ async def expand_cited_by(
     if work is None and node.title:
         work = await resolver.resolve_by_title(node.title, year=node.year)
 
+    limit = max(1, min(payload.limit, 50))
     if work is None:
+        s2_cites = await resolver.fetch_semantic_scholar_neighbors(
+            relation="citations",
+            doi=node.doi,
+            arxiv_id=node.arxiv_id,
+            title=node.title,
+            limit=limit,
+        )
+        if not s2_cites:
+            return ExpandResponse(
+                source_id=node.id,
+                nodes=[],
+                edges=[],
+                warnings=[
+                    f"Could not match '{node.title or node.id}' in OpenAlex or Semantic Scholar to fetch forward citations."
+                ],
+            )
+        gb = GraphBuilder()
+        target_node = PaperNode(
+            id=node.id,
+            title=node.title or "Untitled Paper",
+            year=node.year,
+            doi=node.doi,
+            arxiv_id=node.arxiv_id,
+            openalex_id=node.openalex_id,
+            is_seed=False,
+            is_expanded=False,
+            is_cited_by_expanded=True,
+        )
+        target_id = gb.add_node(target_node)
+        for citing_node in s2_cites:
+            citing_id = gb.add_node(citing_node)
+            gb.add_edge(citing_id, target_id)
+        built = gb.build(warnings=["Fetched forward citations via Semantic Scholar fallback."])
         return ExpandResponse(
-            source_id=node.id,
-            nodes=[],
-            edges=[],
-            warnings=[
-                f"Could not match '{node.title or node.id}' in OpenAlex to fetch forward citations."
-            ],
+            source_id=target_id,
+            nodes=built.nodes,
+            edges=built.edges,
+            warnings=built.warnings,
         )
 
     gb = GraphBuilder()
@@ -477,16 +591,28 @@ async def expand_cited_by(
     ).model_copy(update={"is_cited_by_expanded": True})
     target_id = gb.add_node(target_node)
 
-    limit = max(1, min(payload.limit, 50))
     citing_works = (
         await resolver.fetch_citing_works(target_node.openalex_id, limit=limit)
         if target_node.openalex_id
         else []
     )
     if not citing_works:
-        warnings.append(
-            f"No forward citations indexed in OpenAlex for '{target_node.title}'."
+        s2_cites = await resolver.fetch_semantic_scholar_neighbors(
+            relation="citations",
+            doi=target_node.doi or node.doi,
+            arxiv_id=target_node.arxiv_id or node.arxiv_id,
+            title=target_node.title or node.title,
+            limit=limit,
         )
+        if s2_cites:
+            for citing_node in s2_cites:
+                citing_id = gb.add_node(citing_node)
+                gb.add_edge(citing_id, target_id)
+            warnings.append("Fetched forward citations via Semantic Scholar fallback.")
+        else:
+            warnings.append(
+                f"No forward citations indexed in OpenAlex or Semantic Scholar for '{target_node.title}'."
+            )
     elif (
         target_node.cited_by_count is not None
         and target_node.cited_by_count > len(citing_works)

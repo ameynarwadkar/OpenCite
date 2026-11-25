@@ -692,6 +692,106 @@ class PaperResolver:
                         return abs_txt.strip(), cites if isinstance(cites, int) else None
         return None, None
 
+    @staticmethod
+    def _s2_paper_to_node(paper: dict | None) -> PaperNode | None:
+        if not isinstance(paper, dict):
+            return None
+        title = str(paper.get("title") or "").strip()
+        if not title:
+            return None
+        ext = paper.get("externalIds") or {}
+        doi = normalize_doi(ext.get("DOI")) if isinstance(ext, dict) else None
+        arxiv_id = normalize_arxiv_id(ext.get("ArXiv")) if isinstance(ext, dict) else None
+        year = paper.get("year")
+        if not isinstance(year, int):
+            year = None
+        venue = str(paper.get("venue") or "").strip() or None
+        authors = [
+            str(a.get("name")).strip()
+            for a in (paper.get("authors") or [])
+            if isinstance(a, dict) and a.get("name")
+        ][:12]
+        cites = paper.get("citationCount")
+        cited_by_count = cites if isinstance(cites, int) else None
+        abs_raw = paper.get("abstract")
+        abstract = abs_raw.strip() if isinstance(abs_raw, str) and len(abs_raw.strip()) >= 20 else None
+        url = str(paper.get("url") or "").strip() or build_default_url(doi, arxiv_id, None)
+        return PaperNode(
+            id=make_canonical_id(doi=doi, arxiv_id=arxiv_id, title=title, year=year),
+            title=title,
+            authors=authors,
+            year=year,
+            venue=venue,
+            doi=doi,
+            arxiv_id=arxiv_id,
+            url=url,
+            abstract=abstract,
+            cited_by_count=cited_by_count,
+            is_seed=False,
+            is_expanded=False,
+            expandable=True,
+        )
+
+    async def fetch_semantic_scholar_neighbors(
+        self,
+        *,
+        relation: str,
+        doi: str | None = None,
+        arxiv_id: str | None = None,
+        title: str | None = None,
+        limit: int = 50,
+    ) -> list[PaperNode]:
+        """Fallback to Semantic Scholar Graph API for references or citations."""
+        if relation not in ("references", "citations"):
+            return []
+        nested_key = "citedPaper" if relation == "references" else "citingPaper"
+        fields = "title,year,venue,authors,citationCount,externalIds,url,abstract"
+
+        client, should_close = self._get_client()
+        try:
+            keys: list[str] = []
+            norm_doi = normalize_doi(doi)
+            norm_arxiv = normalize_arxiv_id(arxiv_id)
+            if norm_doi:
+                keys.append(f"DOI:{norm_doi}")
+            if norm_arxiv:
+                keys.append(f"ARXIV:{norm_arxiv}")
+
+            if not keys and title and len(title.strip()) >= 8:
+                search_data = await self._get_json(
+                    client,
+                    f"{SEMANTIC_SCHOLAR_API}/paper/search",
+                    params={"query": title.strip()[:200], "limit": 3, "fields": "paperId,title"},
+                )
+                for item in (search_data or {}).get("data") or []:
+                    if isinstance(item, dict) and item.get("paperId"):
+                        if _title_similarity(title, str(item.get("title") or "")) >= 0.72:
+                            keys.append(str(item["paperId"]))
+                            break
+
+            for paper_key in keys:
+                data = await self._get_json(
+                    client,
+                    f"{SEMANTIC_SCHOLAR_API}/paper/{paper_key}/{relation}",
+                    params={"fields": fields, "limit": max(1, min(limit, 100))},
+                )
+                items = (data or {}).get("data") or []
+                if not isinstance(items, list) or not items:
+                    continue
+                nodes: list[PaperNode] = []
+                for entry in items:
+                    if not isinstance(entry, dict):
+                        continue
+                    node = self._s2_paper_to_node(entry.get(nested_key))
+                    if node is not None:
+                        nodes.append(node)
+                if nodes:
+                    return nodes
+            return []
+        finally:
+            if should_close:
+                await client.aclose()
+
     async def fetch_paper_details(
         self,
         *,

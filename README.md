@@ -58,6 +58,21 @@ cd frontend; npm install; npm run build; cd ..
 Open **http://127.0.0.1:8000** in your browser.  
 For frontend hot-reload during development, run `npm run dev` inside `frontend/` (proxies `/api` to `:8000`).
 
+## Deploying with Docker (Free on Hugging Face Spaces / Render)
+
+OpenCite includes a multi-stage `Dockerfile` (builds the TypeScript frontend and serves FastAPI on port `7860` or `$PORT`):
+
+```bash
+docker build -t opencite .
+docker run -p 7860:7860 -e OPENALEX_MAILTO=you@university.edu opencite
+```
+
+Optional environment variables:
+- `OPENALEX_MAILTO` — your email for OpenAlex/Crossref polite pool routing
+- `OPENALEX_API_KEY` — optional OpenAlex API key
+- `S2_API_KEY` — optional Semantic Scholar API key (used for fallback references/citations & abstracts)
+- `RATE_LIMIT_REQUESTS` / `RATE_LIMIT_WINDOW_SECONDS` — per-IP `/api/*` rate limit (defaults to `60` req / `60s`; set `0` to disable)
+
 ## Tech Stack
 
 - **Backend:** Python, FastAPI, PyMuPDF (`pymupdf`), `httpx`, Pydantic

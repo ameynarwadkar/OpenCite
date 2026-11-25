@@ -406,6 +406,125 @@ def test_healthz_and_upload_limits():
     assert "at most 5" in resp.json()["detail"].lower()
 
 
+def test_semantic_scholar_fallback_for_expand_and_cited_by():
+    def s2_only_handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.url.host == "api.semanticscholar.org":
+            if "/references" in url:
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "citedPaper": {
+                                    "title": "S2 Fallback Reference Paper",
+                                    "year": 2020,
+                                    "venue": "ICLR",
+                                    "authors": [{"name": "Ada Lovelace"}],
+                                    "citationCount": 420,
+                                    "externalIds": {"DOI": "10.1000/s2-ref"},
+                                }
+                            }
+                        ]
+                    },
+                )
+            if "/citations" in url:
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {
+                                "citingPaper": {
+                                    "title": "S2 Fallback Citing Paper",
+                                    "year": 2025,
+                                    "venue": "NeurIPS",
+                                    "authors": [{"name": "Grace Hopper"}],
+                                    "citationCount": 12,
+                                    "externalIds": {"ArXiv": "2501.00001"},
+                                }
+                            }
+                        ]
+                    },
+                )
+        return httpx.Response(404, json={"error": "not found"})
+
+    resolver = PaperResolver(
+        client=httpx.AsyncClient(transport=httpx.MockTransport(s2_only_handler))
+    )
+    app.dependency_overrides[get_resolver] = lambda: resolver
+    try:
+        client = TestClient(app)
+        exp = client.post(
+            "/api/papers/expand",
+            json={
+                "node": {
+                    "id": "doi:10.1000/not-in-openalex",
+                    "doi": "10.1000/not-in-openalex",
+                    "title": "Niche Paper Missing From OpenAlex",
+                }
+            },
+        )
+        assert exp.status_code == 200
+        exp_data = exp.json()
+        assert len(exp_data["edges"]) == 1
+        assert any(n["id"] == "doi:10.1000/s2-ref" for n in exp_data["nodes"])
+        assert any("Semantic Scholar" in w for w in exp_data["warnings"])
+
+        cb = client.post(
+            "/api/papers/cited-by",
+            json={
+                "node": {
+                    "id": "doi:10.1000/not-in-openalex",
+                    "doi": "10.1000/not-in-openalex",
+                    "title": "Niche Paper Missing From OpenAlex",
+                },
+                "limit": 10,
+            },
+        )
+        assert cb.status_code == 200
+        cb_data = cb.json()
+        assert len(cb_data["edges"]) == 1
+        assert cb_data["edges"][0]["source"] == "arxiv:2501.00001"
+        assert cb_data["edges"][0]["target"] == "doi:10.1000/not-in-openalex"
+        assert any("Semantic Scholar" in w for w in cb_data["warnings"])
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_api_rate_limiting(monkeypatch):
+    import backend.main as main_mod
+
+    main_mod.reset_rate_limiter()
+    monkeypatch.setattr(main_mod, "RATE_LIMIT_REQUESTS", 2)
+    monkeypatch.setattr(main_mod, "RATE_LIMIT_WINDOW_SECONDS", 60)
+    try:
+        client = TestClient(app)
+        ris_bytes = b"TY  - JOUR\nTI  - Rate Limit Test\nER  -\n"
+        r1 = client.post(
+            "/api/papers/ris?offline=true",
+            files=[("files", ("a.ris", ris_bytes, "text/plain"))],
+            headers={"X-Forwarded-For": "203.0.113.9"},
+        )
+        r2 = client.post(
+            "/api/papers/ris?offline=true",
+            files=[("files", ("a.ris", ris_bytes, "text/plain"))],
+            headers={"X-Forwarded-For": "203.0.113.9"},
+        )
+        r3 = client.post(
+            "/api/papers/ris?offline=true",
+            files=[("files", ("a.ris", ris_bytes, "text/plain"))],
+            headers={"X-Forwarded-For": "203.0.113.9"},
+        )
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        assert r3.status_code == 429
+        assert "Retry-After" in r3.headers
+        # /healthz is exempt from API rate limiting
+        assert client.get("/healthz", headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 200
+    finally:
+        main_mod.reset_rate_limiter()
+
+
 def test_serves_frontend_index_and_static_assets():
     client = TestClient(app)
     index_resp = client.get("/")
