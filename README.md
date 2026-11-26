@@ -74,9 +74,15 @@ For researchers who want to run OpenCite locally (including strict **`Local only
 - **Build on macOS / Linux:** Run `./scripts/build_desktop.sh` → creates `dist/OpenCite`.
 - **Automated Releases:** Pushing a git tag (e.g., `git tag v0.5.0 && git push origin v0.5.0`) triggers [`.github/workflows/release-desktop.yml`](.github/workflows/release-desktop.yml) to build and attach Windows, macOS, and Browser Extension bundles directly to a GitHub Release.
 
-## Deploying with Docker (Free on Hugging Face Spaces / Render)
+## Deploying with Docker (Free on Hugging Face Spaces / GitHub Packages)
 
-OpenCite includes a multi-stage `Dockerfile` (builds the TypeScript frontend and serves FastAPI on port `7860` or `$PORT`):
+Run the pre-built image from GitHub Packages:
+
+```bash
+docker run -p 7860:7860 -e OPENALEX_MAILTO=you@university.edu ghcr.io/ameynarwadkar/opencite:latest
+```
+
+Or build locally with the included multi-stage `Dockerfile` (builds the TypeScript frontend and serves FastAPI on port `7860` or `$PORT`):
 
 ```bash
 docker build -t opencite .

@@ -39,7 +39,7 @@ ROOT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
 FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
 STATIC_DIR = ROOT_DIR / "static"
 
-app = FastAPI(title="OpenCite", version="0.4.0")
+app = FastAPI(title="OpenCite", version="0.5.0")
 _default_resolver = PaperResolver()
 
 MAX_UPLOAD_FILES = 5

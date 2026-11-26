@@ -25,7 +25,7 @@ SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1"
 OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "opencite@local.dev").strip() or "opencite@local.dev"
 OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "").strip()
 S2_API_KEY = os.getenv("S2_API_KEY", "").strip()
-USER_AGENT = f"OpenCite/0.4 (mailto:{OPENALEX_MAILTO})"
+USER_AGENT = f"OpenCite/0.5 (mailto:{OPENALEX_MAILTO})"
 WORK_SELECT_FIELDS = (
     "id,doi,ids,title,publication_year,cited_by_count,is_retracted,abstract_inverted_index,topics,authorships,primary_location,referenced_works"
 )

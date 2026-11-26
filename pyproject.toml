@@ -1,7 +1,7 @@
 [project]
-name = "citation-graph"
-version = "0.1.0"
-description = "Minimal interactive citation graph builder from PDFs, DOIs, and arXiv IDs"
+name = "opencite"
+version = "0.5.0"
+description = "Free, local interactive citation graph for PDFs, .bib, .ris, and DOIs"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
